@@ -1,0 +1,44 @@
+node_modules/
+.env
+dist/
+.angular/cache/
+storage/sale-photos/originals/*
+!storage/sale-photos/originals/.gitkeep
+storage/sale-photos/deliveries/*
+!storage/sale-photos/deliveries/.gitkeep
+
+# Generated at prestart/prebuild from MEDIA_CDN_URL; tells the browser which
+# origin serves gallery media. Per-environment, so never committed.
+src/assets/media-config.json
+
+# Gallery media lives on disk / object storage, never in git.
+# Category folders under storage/media are the source of truth for gallery categories.
+storage/media/*
+!storage/media/README.md
+storage/quarantine/
+storage/uploads/*
+!storage/uploads/.gitignore
+
+# Runtime state written by the API, persisted per-environment under data/.
+storage/products/
+storage/inquiries/
+storage/content/
+
+# Local credentials
+.oauth-token.json
+client_secret_*.json
+service-account-*.json
+filezilla_*.xml
+
+# Runtime order records written by the API.
+storage/orders/
+
+# Runtime booking records written by the API.
+storage/bookings/
+
+# descriptions.json is NOT unignored here, deliberately. On the server
+# storage/ is a symlink to /var/www/fairview/data/storage so live data survives
+# redeploys, and git refuses to pull a tracked file in through that symlink --
+# it aborts the whole deploy. The captions live in the bucket instead
+# (assets/gallery/descriptions.json, which is what the manifest reads), and the
+# tracked *-rename-review.csv files can regenerate them via `npm run media:names`.

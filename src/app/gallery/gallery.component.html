@@ -1,0 +1,72 @@
+<section id="gallery" class="gallery">
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">THE VENUE</p>
+      <h2>See the space</h2>
+    </div>
+    <p class="service-lede">A look at the rooms and grounds available to book below.</p>
+  </div>
+  <div class="gallery-tabs">
+    <button *ngFor="let category of categories; trackBy: trackByCategory"
+            [class.active]="activeGallery === category"
+            (click)="onCategoryChange(category)">
+      {{category}}
+    </button>
+  </div>
+  <div class="gallery-tabs gallery-media-kinds">
+    <button *ngFor="let kind of mediaKinds; trackBy: trackByMediaKind"
+            [class.active]="activeMediaKind === kind.value"
+            (click)="onMediaKindChange(kind.value)">
+      {{kind.label}}
+    </button>
+  </div>
+
+  <ng-container *ngIf="activeMediaKind === 'tour'; else mediaGrid">
+    <div class="gallery-tour" *ngIf="safeTourUrl; else emptyTour">
+      <iframe [src]="safeTourUrl" title="{{activeGallery}} virtual tour" allow="fullscreen; xr-spatial-tracking" allowfullscreen loading="lazy"></iframe>
+    </div>
+    <ng-template #emptyTour>
+      <p class="gallery-empty">A virtual tour for {{activeGallery}} isn't available yet.</p>
+    </ng-template>
+  </ng-container>
+
+  <ng-template #mediaGrid>
+    <div class="gallery-loading" *ngIf="galleryLoading">
+      <div class="spinner"></div>
+      <p>Loading gallery media…</p>
+    </div>
+    <div class="gallery-grid" *ngIf="visibleGallery.length; else emptyGallery">
+      <article *ngFor="let image of visibleGallery; trackBy: trackByGalleryItem"
+               (click)="onMediaClick(image)"
+               role="button"
+               tabindex="0"
+               (keydown.enter)="onMediaClick(image)"
+               (keydown.space)="onMediaClick(image)">
+        <video *ngIf="image.mediaType === 'video'"
+               [src]="image.image"
+               muted
+               playsinline
+               preload="metadata"
+               [attr.aria-label]="image.description || image.title"
+               (loadedmetadata)="onMediaLoaded()"></video>
+        <img *ngIf="image.mediaType === 'image'"
+             [src]="image.image"
+             [alt]="image.description || image.title"
+             loading="lazy"
+             decoding="async"
+             (load)="onMediaLoaded()">
+        <div>
+          <span>{{image.category}} <b *ngIf="image.mediaType === 'video'">· Video</b></span>
+          <h3>{{image.title}}</h3>
+        </div>
+      </article>
+    </div>
+    <div class="gallery-loading-more" *ngIf="galleryPrefetching && galleryPrefetchCount < visibleGallery.length">
+      <div class="spinner small"></div>
+      <p>Loading more…</p>
+    </div>
+    <ng-template #emptyGallery>
+      <p class="gallery-empty">{{activeGallery}} {{activeMediaKind}} will appear here once they're added.</p>
+    </ng-template>
+  </ng-template>
+</section>

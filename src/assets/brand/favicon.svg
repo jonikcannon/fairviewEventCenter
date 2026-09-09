@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Greater Harvest Church">
+  <title>Greater Harvest Church / Fairview Community Center</title>
+  <circle cx="32" cy="32" r="32" fill="#26362e"/>
+  <rect x="29" y="10" width="6" height="42" fill="#f4f2ec"/>
+  <rect x="19" y="23" width="26" height="6" fill="#f4f2ec"/>
+  <path d="M0 0C4 -2.7 4 -8.8 0 -12.3C-4 -8.8 -4 -2.7 0 0Z" fill="#d9ab5c" transform="translate(23 52) rotate(-40)"/>
+  <path d="M0 0C4 -2.7 4 -8.8 0 -12.3C-4 -8.8 -4 -2.7 0 0Z" fill="#d9ab5c" transform="translate(41 52) rotate(40)"/>
+</svg>

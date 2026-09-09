@@ -1,0 +1,72 @@
+<section id="services" class="services">
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">HOW WE CAN HELP</p>
+      <h2>Our services</h2>
+    </div>
+    <p class="service-lede">A relaxed process. Sharp creative direction. Photographs that do the talking.</p>
+  </div>
+  <div class="service-tabs">
+    <button *ngFor="let service of services" 
+            [class.active]="activeService === service.name" 
+            (click)="onServiceChange(service.name)">
+      {{service.name}}
+    </button>
+  </div>
+  <div class="service-detail" 
+       *ngFor="let service of services" 
+       [class.visible]="activeService === service.name">
+    <div class="service-content">
+      <div class="service-number">0{{services.indexOf(service)+1}} <span>{{service.icon}}</span></div>
+      <div>
+        <h3>{{service.title}}</h3>
+        <p>{{service.text}}</p>
+        <div class="service-pricing">
+          <h4>{{ service.pricingTitle }}</h4>
+          <ul>
+            <li *ngFor="let tier of service.tiers">
+              <b>{{ tier.label }}:</b> {{ tier.price }}
+              <span>{{ tier.details }}</span>
+            </li>
+          </ul>
+        </div>
+        <div class="service-pricing service-addons" *ngIf="service.addons.length">
+          <h4>Add-ons and rates</h4>
+          <ul>
+            <li *ngFor="let addon of service.addons">
+              <b>{{ addon.label }}:</b> {{ addon.price }}
+              <span>{{ addon.details }}</span>
+            </li>
+          </ul>
+        </div>
+        <button class="underlined" (click)="onLearnMoreClick()">Learn more <span>↗</span></button>
+      </div>
+    </div>
+    <div class="service-media">
+      <img *ngIf="service.mediaType !== 'video'" [src]="service.image" [alt]="service.title">
+      <video *ngIf="service.mediaType === 'video'" [src]="getServiceMediaSource(service)" [poster]="service.poster || null" autoplay muted loop playsinline preload="metadata" [attr.aria-label]="service.title"></video>
+      <div class="service-media-cycle" *ngIf="canCycleAerialVideos(service)">
+        <button type="button" class="service-media-nav" (click)="showPreviousAerialVideo()" aria-label="Previous aerial video">‹</button>
+        <p>{{ getAerialVideoPosition() }} / {{ getAerialVideoTotal() }}</p>
+        <button type="button" class="service-media-nav" (click)="showNextAerialVideo()" aria-label="Next aerial video">›</button>
+      </div>
+    </div>
+  </div>
+
+  <section class="services-contact">
+    <div>
+      <p class="eyebrow">CONTACT US</p>
+      <h3>Tell us about your project</h3>
+      <p>Share the property type, timeline, and what coverage you need. We will reply with the right package and next steps.</p>
+    </div>
+    <form class="services-contact-form" (ngSubmit)="onSubmitContact()">
+      <label>Name<input type="text" name="name" [(ngModel)]="contact.name" required></label>
+      <label>Email<input type="email" name="email" [(ngModel)]="contact.email" required></label>
+      <label>Service<select name="service" [(ngModel)]="contact.service"><option *ngFor="let service of services" [value]="service.name">{{service.name}}</option></select></label>
+      <label>Project details<textarea name="message" [(ngModel)]="contact.message" placeholder="Property size, location, and requested media..." required></textarea></label>
+      <button class="underlined" type="submit" [disabled]="submitting">{{ submitting ? 'Sending…' : 'Send inquiry' }} <span>↗</span></button>
+      <p class="form-success" *ngIf="formSuccess">{{ formSuccess }}</p>
+      <p class="form-error" *ngIf="formError">{{ formError }}</p>
+    </form>
+  </section>
+</section>

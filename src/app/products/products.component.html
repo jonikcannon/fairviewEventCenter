@@ -1,0 +1,99 @@
+<section id="products" class="products">
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">DIGITAL SHOP</p>
+      <h2>Digital products for sale</h2>
+    </div>
+  </div>
+
+  <div class="products-loading" *ngIf="loading">
+    <div class="spinner"></div>
+    <p>Loading products...</p>
+  </div>
+
+  <div class="products-empty" *ngIf="!loading && !products.length">
+    <p>No digital products are available right now. Check back soon.</p>
+  </div>
+
+  <div class="products-grid" *ngIf="!loading && products.length">
+    <article class="product-card" *ngFor="let product of shownProducts; trackBy: trackByProduct" (click)="onMediaPreview(product)">
+      <video *ngIf="product.mediaType === 'video'" [src]="product.image" muted loop playsinline preload="metadata" [attr.aria-label]="product.title"></video>
+      <img *ngIf="product.mediaType === 'image'" [src]="product.image" [alt]="product.title" loading="lazy" decoding="async">
+      <div class="product-info">
+        <p class="product-meta">{{ product.category }}</p>
+        <h3>{{ product.title }}</h3>
+        <p class="product-sku">SKU: {{ product.sku }}</p>
+        <p class="product-description" *ngIf="product.description">{{ product.description }}</p>
+        <p class="product-details" *ngIf="product.details">{{ product.details }}</p>
+        <div class="print-config" *ngIf="editingProductId !== product.id && product.mediaType === 'image'" (click)="$event.stopPropagation()">
+          <p>Print options</p>
+          <div class="print-config-grid">
+            <label>
+              Size
+              <select [ngModel]="getSelectedPrintSize(product.id)" (ngModelChange)="setSelectedPrintSize(product.id, $event)" [name]="'print-size-' + product.id">
+                <option *ngFor="let option of printSizeOptions" [value]="option.size">{{ option.label }} · from ${{ option.unitPrice }}</option>
+              </select>
+            </label>
+            <label>
+              Qty
+              <input type="number" min="1" [ngModel]="getSelectedPrintQuantity(product.id)" (ngModelChange)="setSelectedPrintQuantity(product.id, $event)" [name]="'print-qty-' + product.id">
+            </label>
+          </div>
+          <p class="print-summary">Print subtotal: ${{ getPrintSubtotal(product.id) }}</p>
+          <p class="print-tier-hint">{{ getPrintTierHint(product.id) }}</p>
+          <p class="print-disclaimer">Default print actions include one digital copy. Use print-only if you do not need the digital file.</p>
+        </div>
+        <div class="product-actions" *ngIf="editingProductId !== product.id" (click)="$event.stopPropagation()">
+          <button class="preview" type="button" (click)="onMediaPreview(product)">Preview media</button>
+          <button class="buy" type="button" (click)="onBuy(product)">{{ product.mediaType === 'video' ? 'Add video lease' : 'Add digital only' }} · ${{ product.price }}</button>
+          <button class="print-buy" type="button" *ngIf="product.mediaType === 'image'" (click)="onBuyPrint(product)">Add digital + print</button>
+          <button class="print-only" type="button" *ngIf="product.mediaType === 'image'" (click)="onBuyPrintOnly(product)">Add print only</button>
+          <button class="publish" type="button" *ngIf="canManage && !product.checkoutEnabled" (click)="onPublish(product)">Publish for checkout</button>
+          <button class="edit" type="button" *ngIf="canManage" (click)="startEdit(product)">Edit details</button>
+          <button class="delete" type="button" *ngIf="canManage" (click)="onDelete(product)">Delete product</button>
+        </div>
+
+        <form class="edit-form" *ngIf="canManage && editingProductId === product.id" (click)="$event.stopPropagation()" (ngSubmit)="saveEdit()">
+          <label>
+            Title
+            <input type="text" name="title-{{ product.id }}" [(ngModel)]="editModel.title" required>
+          </label>
+          <label>
+            Category
+            <select name="category-{{ product.id }}" [(ngModel)]="editModel.category" required>
+              <option *ngFor="let option of categoryOptions" [value]="option">{{ option }}</option>
+            </select>
+          </label>
+          <label>
+            Price (USD)
+            <input type="number" min="1" name="price-{{ product.id }}" [(ngModel)]="editModel.price" required>
+          </label>
+          <label>
+            Description
+            <textarea name="description-{{ product.id }}" [(ngModel)]="editModel.description"></textarea>
+          </label>
+          <label>
+            Other details
+            <textarea name="details-{{ product.id }}" [(ngModel)]="editModel.details" placeholder="Licensing notes, format, delivery info..."></textarea>
+          </label>
+          <div class="edit-actions">
+            <button class="save" type="submit">Save</button>
+            <button class="cancel" type="button" (click)="cancelEdit()">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </article>
+  </div>
+
+  <!-- The sentinel is always rendered while more remain, so the observer has
+       something to watch. It sits outside the grid to avoid becoming a stray
+       cell in the column layout. -->
+  <div class="catalogue-more" *ngIf="!loading && products.length">
+    <p class="catalogue-count" aria-live="polite">Showing {{ shownEnd }} of {{ products.length }}</p>
+    <div #sentinel class="catalogue-sentinel" aria-hidden="true"></div>
+    <button type="button" class="catalogue-more-button" *ngIf="hasMore" (click)="loadMore()">
+      Load more
+    </button>
+    <p class="catalogue-end" *ngIf="!hasMore && products.length > pageSize">That's everything.</p>
+  </div>
+</section>

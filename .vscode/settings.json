@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cmd /c npm run build$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

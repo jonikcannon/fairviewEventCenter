@@ -1,0 +1,67 @@
+<section id="cart-panel" class="cart-panel">
+  <div class="cart-head">
+    <div>
+      <h3>Active cart items</h3>
+      <p class="cart-subhead">Ready for secure checkout</p>
+    </div>
+    <p>{{ activeCartCount }} item{{ activeCartCount === 1 ? '' : 's' }}</p>
+  </div>
+
+  <div class="cart-empty" *ngIf="!cartItems.length">Your cart is empty.</div>
+
+  <div class="cart-items" *ngIf="cartItems.length">
+    <article class="cart-item" *ngFor="let item of cartItems; trackBy: trackByCartItem">
+      <video *ngIf="item.mediaType === 'video'" [src]="item.image" muted playsinline preload="metadata" [attr.aria-label]="item.title"></video>
+      <img *ngIf="item.mediaType === 'image'" [src]="item.image" [alt]="item.title">
+      <div>
+        <h4>{{ item.title }}</h4>
+        <p>{{ item.sku }}</p>
+        <p class="cart-item-kind">{{ item.orderType === 'print' ? 'Print order' : 'Digital item' }}</p>
+        <p *ngIf="item.orderType === 'digital'" class="cart-print-note">Included digital file for print add-on bundle.</p>
+        <p *ngIf="item.orderType === 'print' && item.printSize">Size: {{ item.printSize }}</p>
+        <p *ngIf="item.orderType === 'print'" class="cart-print-note">Print add-on only. Digital file is purchased separately.</p>
+        <p>${{ item.price }} each</p>
+      </div>
+      <div class="cart-controls">
+        <label>
+          Qty
+          <input type="number" min="1" [ngModel]="item.quantity" (ngModelChange)="onUpdateQuantity(item.cartItemId, $event)">
+        </label>
+        <button type="button" (click)="onRemove(item.cartItemId)">Remove</button>
+      </div>
+    </article>
+
+    <section class="cart-delivery" *ngIf="hasDigitalItems">
+      <p class="cart-delivery-title">Digital delivery</p>
+      <label>
+        Email for digital files
+        <input
+          type="email"
+          [ngModel]="digitalDeliveryEmail"
+          (ngModelChange)="onDeliveryEmailChange($event)"
+          name="digitalDeliveryEmail"
+          placeholder="name@example.com"
+          required>
+      </label>
+      <p class="cart-delivery-note">We will send digital media to this email after payment confirmation.</p>
+      <label class="cart-delivery-optin">
+        <input
+          type="checkbox"
+          [ngModel]="deliveryUpdatesOptIn"
+          (ngModelChange)="onDeliveryUpdatesOptInChange($event)"
+          name="deliveryUpdatesOptIn">
+        Email me order updates.
+      </label>
+    </section>
+
+    <p class="cart-form-error" *ngIf="cartFormError">{{ cartFormError }}</p>
+
+    <div class="cart-footer">
+      <div class="cart-total-wrap">
+        <span>Order total</span>
+        <p>${{ cartTotal }}</p>
+      </div>
+      <button type="button" (click)="onCheckout()" [disabled]="cartCheckingOut">{{ cartCheckingOut ? 'Redirecting…' : 'Checkout with Stripe' }}</button>
+    </div>
+  </div>
+</section>

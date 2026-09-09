@@ -1,0 +1,215 @@
+<section id="booking" class="booking">
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">BOOK A SESSION</p>
+      <h2>Reserve a session</h2>
+      <p class="booking-intro">
+        Pick an available day, choose a start time and secure it with a deposit.
+        If the light or the tide means we should move, we will get in touch.
+      </p>
+    </div>
+  </div>
+
+  <div class="booking-loading" *ngIf="loading">
+    <div class="spinner"></div>
+    <p>Loading available sessions...</p>
+  </div>
+
+  <p class="error" *ngIf="error">{{ error }}</p>
+
+  <!-- Calendar + date picker -->
+  <div class="booking-picker" *ngIf="!loading && !selectedSlot">
+    <div class="booking-controls">
+      <label class="booking-date-input">
+        Choose a date
+        <input type="date" [ngModel]="selectedDateInput" (ngModelChange)="selectDateInput($event)" [min]="todayDateValue">
+      </label>
+
+      <label class="booking-service-select" *ngIf="serviceOptions.length">
+        Service
+        <select [ngModel]="serviceFilter" (ngModelChange)="onServiceFilterChange($event)">
+          <option value="all">All services</option>
+          <option *ngFor="let service of serviceOptions" [value]="service">{{ service }}</option>
+        </select>
+      </label>
+    </div>
+
+    <p class="booking-empty" *ngIf="!slots.length">
+      No sessions are open at the moment. Pick a date below to request one, or
+      <button type="button" class="underlined" (click)="enquire.emit()">ask about availability</button>.
+    </p>
+
+    <!-- Picking a date can fail (no sessions that day for the chosen service).
+         The form below is not on screen yet, so its error line cannot report it. -->
+    <p class="error" *ngIf="formError">{{ formError }}</p>
+
+    <div class="booking-calendar" aria-label="Available booking dates">
+      <div class="booking-calendar-head">
+        <button type="button" class="calendar-nav" (click)="shiftCalendarMonth(-1)" aria-label="Previous month">←</button>
+        <h3>{{ calendarMonthLabel }}</h3>
+        <button type="button" class="calendar-nav" (click)="shiftCalendarMonth(1)" aria-label="Next month">→</button>
+      </div>
+
+      <div class="calendar-weekdays">
+        <span>Sun</span>
+        <span>Mon</span>
+        <span>Tue</span>
+        <span>Wed</span>
+        <span>Thu</span>
+        <span>Fri</span>
+        <span>Sat</span>
+      </div>
+
+      <div class="calendar-grid">
+        <button
+          type="button"
+          class="calendar-day"
+          *ngFor="let day of calendarDays; trackBy: trackByCalendarDay"
+          [class.outside-month]="!day.inMonth"
+          [class.available]="day.available"
+          [class.requestable]="day.requestable"
+          [class.selected]="day.selected"
+          [disabled]="!day.available && !day.requestable"
+          (click)="selectCalendarDate(day)">
+          <span>{{ day.date ? parseDay(day.date).getDate() : '' }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Times on the chosen day -->
+    <div class="booking-times" *ngIf="selectedDateInput && timesForSelectedDate.length">
+      <div class="booking-times-head">
+        <h3>{{ formatDay(selectedDateInput) }}</h3>
+        <button type="button" class="underlined" (click)="clearDate()">Clear</button>
+      </div>
+      <p class="booking-times-hint">{{ timesForSelectedDate.length }} start time{{ timesForSelectedDate.length === 1 ? '' : 's' }} open. Pick one to continue.</p>
+      <div class="time-grid">
+        <button
+          type="button"
+          class="time-chip"
+          *ngFor="let slot of timesForSelectedDate; trackBy: trackBySlot"
+          (click)="select(slot)">
+          <span class="time-chip-time">{{ formatTime(slot.startTime) || 'Time to be agreed' }}</span>
+          <span class="time-chip-meta">{{ slot.service }}</span>
+          <span class="time-chip-meta" *ngIf="slot.approxDurationMinutes">{{ duration(slot.approxDurationMinutes) }}</span>
+          <span class="time-chip-fee">{{ money(slot.deposit) }} deposit</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Requesting a date with nothing published yet: no studio-set fee exists
+         to check out against, so the deposit is estimated from the service's
+         starting price and paid the same way as an already-published time --
+         paying provisionally holds this exact date and time. -->
+    <div class="booking-times booking-request" *ngIf="requestDateInput">
+      <div class="booking-times-head">
+        <h3>Request {{ formatDay(requestDateInput) }}</h3>
+        <button type="button" class="underlined" (click)="cancelRequest()">Clear</button>
+      </div>
+      <p class="booking-times-hint">
+        No sessions are published for this date yet. Pick a time and pay the deposit to provisionally hold it --
+        the balance is priced from the service's starting rate and settled once we confirm the details.
+      </p>
+      <form class="booking-form" (ngSubmit)="submitRequest()">
+        <label>
+          Service
+          <select name="requestService" [(ngModel)]="requestForm.service" required>
+            <option value="" disabled>Choose a service</option>
+            <option *ngFor="let service of serviceCatalog" [value]="service">{{ service }}</option>
+          </select>
+        </label>
+        <label>
+          Time
+          <input type="time" name="requestTime" [(ngModel)]="requestForm.startTime" required>
+        </label>
+        <label>
+          Name
+          <input type="text" name="requestName" [(ngModel)]="requestForm.name" required autocomplete="name">
+        </label>
+        <label>
+          Email
+          <input type="email" name="requestEmail" [(ngModel)]="requestForm.email" required autocomplete="email">
+        </label>
+        <label>
+          Phone <span class="optional">optional</span>
+          <input type="tel" name="requestPhone" [(ngModel)]="requestForm.phone" autocomplete="tel">
+        </label>
+        <label>
+          Anything we should know <span class="optional">optional</span>
+          <textarea name="requestNotes" [(ngModel)]="requestForm.notes" placeholder="Location, the story you want told, number of people..."></textarea>
+        </label>
+        <div class="booking-actions">
+          <button type="submit" class="booking-pay" [disabled]="requestSubmitting">
+            {{ requestSubmitting ? 'Starting checkout...' : 'Reserve ' + formatDay(requestDateInput) + ' with a deposit' }}
+          </button>
+          <button type="button" class="booking-back" (click)="cancelRequest()" [disabled]="requestSubmitting">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="booking-groups" *ngIf="!selectedDateInput && dayGroups.length">
+      <div class="booking-group">
+        <h3>Open days</h3>
+        <div class="booking-grid">
+          <button
+            type="button"
+            class="slot-card"
+            *ngFor="let group of dayGroups; trackBy: trackByGroup"
+            (click)="selectDateInput(group.date)">
+            <span class="slot-date">{{ group.label }}</span>
+            <span class="slot-service">{{ group.slots.length }} time{{ group.slots.length === 1 ? '' : 's' }} open</span>
+            <span class="slot-meta" *ngIf="group.slots[0].location">{{ group.slots[0].location }}</span>
+            <span class="slot-meta" *ngIf="group.slots[0].approxDurationMinutes">{{ duration(group.slots[0].approxDurationMinutes) }} sessions</span>
+            <span class="slot-fee">{{ money(group.slots[0].sessionFee) }} session</span>
+            <span class="slot-deposit">{{ money(group.slots[0].deposit) }} deposit to reserve</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Details and deposit -->
+  <div class="booking-form-wrap" *ngIf="!loading && selectedSlot as slot">
+    <div class="booking-summary">
+      <p class="eyebrow">YOUR SESSION</p>
+      <h3>{{ formatDay(slot.date) }}</h3>
+      <p class="booking-summary-time">{{ timeRange(slot) }}</p>
+      <p class="booking-summary-service">{{ slot.service }}<span *ngIf="slot.location"> · {{ slot.location }}</span></p>
+      <dl class="booking-costs">
+        <div><dt>Session fee</dt><dd>{{ money(slot.sessionFee) }}</dd></div>
+        <div class="is-due"><dt>Deposit now</dt><dd>{{ money(slot.deposit) }}</dd></div>
+        <div><dt>Balance on the day</dt><dd>{{ money(slot.balanceDue) }}</dd></div>
+      </dl>
+      <p class="booking-policy" *ngIf="refundPolicy">{{ refundPolicy }}</p>
+      <p class="booking-hold">This time is held for you for {{ holdMinutes }} minutes while you pay.</p>
+    </div>
+
+    <form class="booking-form" (ngSubmit)="submit()">
+      <label>
+        Name
+        <input type="text" name="bookingName" [(ngModel)]="form.name" required autocomplete="name">
+      </label>
+      <label>
+        Email
+        <input type="email" name="bookingEmail" [(ngModel)]="form.email" required autocomplete="email">
+      </label>
+      <label>
+        Phone <span class="optional">optional</span>
+        <input type="tel" name="bookingPhone" [(ngModel)]="form.phone" autocomplete="tel">
+      </label>
+      <label>
+        Anything we should know <span class="optional">optional</span>
+        <textarea name="bookingNotes" [(ngModel)]="form.notes" placeholder="Location access, the story you want told, number of people..."></textarea>
+      </label>
+
+      <p class="error" *ngIf="formError">{{ formError }}</p>
+
+      <div class="booking-actions">
+        <button type="submit" class="booking-pay" [disabled]="submitting">
+          {{ submitting ? 'Starting checkout...' : 'Reserve ' + formatDay(slot.date) + ' at ' + formatTime(slot.startTime) + ' with ' + money(slot.deposit) + ' deposit' }}
+        </button>
+        <button type="button" class="booking-back" (click)="cancel()" [disabled]="submitting">Pick another time</button>
+      </div>
+    </form>
+  </div>
+</section>
