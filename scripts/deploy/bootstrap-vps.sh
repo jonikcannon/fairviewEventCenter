@@ -118,8 +118,14 @@ if [[ ! -f "${APP_DIR}/.env" ]]; then
   chmod 600 "${APP_DIR}/.env"
 fi
 
-sed -i "s|https://yourdomain.com|https://${DOMAIN}|g" "${APP_DIR}/.env"
-sed -i "s|no-reply@yourdomain.com|no-reply@${DOMAIN}|g" "${APP_DIR}/.env"
+# By variable name rather than a magic placeholder string -- .env.example's
+# CLIENT_ORIGIN default is a local dev URL (http://localhost:6200), not a
+# yourdomain.com placeholder, so a string-replace looking for the latter
+# would silently match nothing and leave the deployed .env pointed at
+# localhost. Matches how setup-tunnel.sh re-sets this same variable later.
+if grep -q '^CLIENT_ORIGIN=' "${APP_DIR}/.env"; then
+  sed -i -E "s#^CLIENT_ORIGIN=.*#CLIENT_ORIGIN=https://${DOMAIN}#" "${APP_DIR}/.env"
+fi
 
 echo "==> Starting API with PM2"
 su - "${APP_USER}" -c "cd '${APP_DIR}' && pm2 start scripts/deploy/ecosystem.config.cjs --env production"

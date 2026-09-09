@@ -6,7 +6,12 @@ module.exports = {
       cwd: '/var/www/fairview/app',
       env: {
         NODE_ENV: 'production',
-        PORT: 3000
+        // Matches .env.example's PORT. Kept off 3000 deliberately: this app
+        // is designed to run alongside sibling brand clones on the same
+        // shared box (see the brandable-photo-commerce-starter skill), and
+        // 3000 is the default a fresh clone's own PORT would fall back to,
+        // so a second app hardcoding it here would collide on shared hosts.
+        PORT: 3500
       },
       instances: 1,
       exec_mode: 'fork',
