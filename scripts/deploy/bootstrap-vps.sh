@@ -43,10 +43,14 @@ echo "==> Installing packages"
 apt-get update
 apt-get install -y -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef nginx certbot python3-certbot-nginx git curl build-essential ufw fail2ban rsync
 
-if ! command -v node >/dev/null 2>&1 || ! node -v | grep -q '^v20'; then
+NODE_MAJOR="$(command -v node >/dev/null 2>&1 && node -v | sed -E 's/^v([0-9]+).*/\1/' || echo 0)"
+if [[ "${NODE_MAJOR}" -lt 20 ]]; then
   echo "==> Installing Node.js 20"
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
   apt-get install -y -o Dpkg::Options::=--force-confold nodejs
+else
+  echo "==> Node.js already installed (v${NODE_MAJOR}, >= 20) -- leaving it alone. A shared box may run a newer"
+  echo "    major version for another app; forcing an exact v20 match would downgrade it."
 fi
 
 if ! command -v pm2 >/dev/null 2>&1; then
