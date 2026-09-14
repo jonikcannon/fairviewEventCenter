@@ -1,7 +1,11 @@
 # Gallery media
 
-This directory is the authoring master for gallery media. **One folder per category —
-the folder name is the category.**
+This documents `storage/media/`, the authoring master for gallery media.
+**One folder per category — the folder name is the category.**
+
+This file itself lives here rather than in `storage/media/` because `storage/`
+is symlinked to persistent, per-environment data on the server (see
+`.gitignore`) — nothing under it can safely be tracked in git.
 
 When Cloudflare R2 is configured (`MEDIA_CDN_URL` in `.env`), the bucket — not this
 directory — is what the site actually lists and serves. Files here are what you edit
@@ -33,9 +37,9 @@ npm run manifest       # rebuild gallery-manifest.json
 not been uploaded yet is reported and left out of the manifest — the gallery can
 only show what is servable.
 
-## Why it lives here and not in `src/assets`
+## Why it lives on disk and not in `src/assets`
 
-Nothing in this directory is tracked by git or bundled by the Angular build, which
+Nothing in `storage/media/` is tracked by git or bundled by the Angular build, which
 is what lets multi-GB video live alongside the app without entering the repo or the
 bundle. How it reaches the browser depends on whether R2 is configured:
 

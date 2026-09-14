@@ -13,8 +13,12 @@ src/assets/media-config.json
 
 # Gallery media lives on disk / object storage, never in git.
 # Category folders under storage/media are the source of truth for gallery categories.
+# No exceptions here (not even a README): storage/ is a symlink to
+# /var/www/fairview/data/storage on the server (see the descriptions.json note
+# below), and a tracked file under it breaks `git pull --ff-only` in deploy.sh
+# the moment the on-disk copy drifts from git's. Docs for this directory live
+# in docs/gallery-media.md instead.
 storage/media/*
-!storage/media/README.md
 storage/quarantine/
 storage/uploads/*
 !storage/uploads/.gitignore

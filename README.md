@@ -58,7 +58,7 @@ empty gallery over a bucket holding the whole library.
 
 Add or recategorise photos by moving files between the local folders, then run
 `npm run media:sync` and `npm run manifest`. See
-[storage/media/README.md](storage/media/README.md).
+[docs/gallery-media.md](docs/gallery-media.md).
 
 ```bash
 npm run manifest             # list from the bucket when R2 is on

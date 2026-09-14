@@ -168,7 +168,7 @@ not imply that the first single-business JSON store provides those guarantees.
    New-Item -ItemType File -Force -Path storage\uploads\.gitignore, storage\sale-photos\originals\.gitkeep, storage\sale-photos\deliveries\.gitkeep | Out-Null
    ```
 
-   Copy `storage/media/README.md` if it was excluded by the directory copy, and
+   Copy `docs/gallery-media.md` if it was excluded by the directory copy, and
    do not create fake gallery assets or customer records.
 4. Initialize a new Git repository in `DESTINATION`. Do not copy the source
    `.git` history, credentials, `.env`, R2/Google service-account files,
