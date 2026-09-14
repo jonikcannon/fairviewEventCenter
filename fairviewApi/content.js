@@ -9,23 +9,24 @@ const defaults = {
   revision: 0,
   updatedAt: '',
   site: {
-    brand: 'Your Business Name',
-    title: 'Your Business Name',
-    description: 'A thoughtful visual studio for people, places, and stories.',
+    brand: 'Fairview Community Center',
+    title: 'Fairview Community Center',
+    description: 'Fairview Community Center — event spaces, bookings, and galleries for weddings, meetings, and celebrations.',
     contactEmail: 'hello@example.com',
     footerText: 'All rights reserved.',
-    socialLinks: []
+    socialLinks: [],
+    logo: ''
   },
   navigation: {
     home: { label: 'Home', visible: true },
     about: { label: 'About', visible: true },
     eventCenter: { label: 'Event Center', visible: true },
-    church: { label: 'Church', visible: true }
+    booking: { label: 'Booking', visible: true }
   },
   hero: {
     eyebrow: 'Fairview Community Center',
-    headline: 'A place to gather, worship, and grow.',
-    intro: 'Home to Greater Harvest Church and open to the community for events, meetings, and celebrations.',
+    headline: 'A place to gather, celebrate, and grow.',
+    intro: 'Open to the community for weddings, meetings, and celebrations of every kind.',
     ctaLabel: 'Plan your event',
     ctaTarget: 'eventCenter',
     video: '',
@@ -33,27 +34,32 @@ const defaults = {
   },
   statement: {
     eyebrow: 'Welcome',
-    heading: 'Faith, fellowship, and community space.',
-    copy: 'Join us for worship, or book the space for your next event.'
+    heading: 'Community, celebration, and shared space.',
+    copy: 'Book the space for your next event, meeting, or celebration.'
   },
-  church: {
-    eyebrow: 'Greater Harvest Church',
-    heading: 'Worship, community, and belonging.',
-    body: 'Service times and ministries are coming soon.'
+  about: {
+    eyebrow: 'WHO WE ARE',
+    heading: 'Community,',
+    headingEmphasis: 'together.',
+    body: "Fairview Community Center is a shared space for the neighbors, families, and groups who gather here throughout the week.\n\nThe center opens its doors to weddings, celebrations, meetings, and events of every kind, with rooms and grounds to fit gatherings large and small.\n\nWhether you're planning a wedding, a meeting, or a celebration, we'd love to help you book the space.",
+    ctaLabel: 'Get in touch',
+    portraitImage: '',
+    features: []
   },
   contact: {
     eyebrow: 'Get in touch',
-    heading: "Questions about worship or booking the center? Let's talk.",
+    heading: "Questions about booking the center? Let's talk.",
     email: 'hello@example.com'
   },
-  tours: { communityCenter: '', church: '' }
+  tours: { communityCenter: '' },
+  theme: { primary: '#26362e', background: '#f4f2ec', text: '#1f211d' }
 };
 
 const maxLengths = {
   brand: 80, title: 120, description: 320, contactEmail: 254, footerText: 180,
   eyebrow: 100, headline: 180, intro: 500, ctaLabel: 80, heading: 180, copy: 600,
   paragraph: 1200, label: 60, media: 300, serviceName: 100, serviceText: 600,
-  workTitle: 120, category: 80
+  workTitle: 120, category: 80, featureTitle: 80, featureText: 400
 };
 
 function clone(value) {
@@ -85,6 +91,14 @@ function assertEmbedUrl(value, field) {
   if (!/^https:\/\//i.test(value)) throw new Error(`${field} must be an HTTPS URL.`);
 }
 
+// Theme colors are applied as raw CSS custom-property values (see
+// AppComponent.applyTheme), so this is deliberately narrow: a 3/4/6/8-digit
+// hex color only, never an arbitrary CSS value that could inject something
+// unexpected into a runtime style declaration.
+function assertHexColor(value, field) {
+  if (!/^#[0-9a-fA-F]{3,8}$/.test(String(value || ''))) throw new Error(`${field} must be a hex color like #26362e.`);
+}
+
 function assertKeys(value, allowed, field) {
   for (const key of Object.keys(value)) {
     if (!allowed.includes(key)) throw new Error(`${field}.${key} is not editable.`);
@@ -93,12 +107,13 @@ function assertKeys(value, allowed, field) {
 
 function validateContent(input) {
   if (!isPlainObject(input)) throw new Error('Content must be an object.');
-  assertKeys(input, ['site', 'navigation', 'hero', 'statement', 'church', 'contact', 'tours'], 'content');
+  assertKeys(input, ['site', 'navigation', 'hero', 'statement', 'about', 'contact', 'tours', 'theme'], 'content');
 
   const site = input.site;
   if (!isPlainObject(site)) throw new Error('site must be an object.');
-  assertKeys(site, ['brand', 'title', 'description', 'contactEmail', 'footerText', 'socialLinks'], 'site');
+  assertKeys(site, ['brand', 'title', 'description', 'contactEmail', 'footerText', 'socialLinks', 'logo'], 'site');
   for (const field of ['brand', 'title', 'description', 'contactEmail', 'footerText']) assertString(site[field], maxLengths[field], `site.${field}`, field !== 'footerText');
+  assertMediaReference(site.logo, 'site.logo');
   if (!Array.isArray(site.socialLinks) || site.socialLinks.length > 8) throw new Error('site.socialLinks is invalid.');
   for (const link of site.socialLinks) {
     if (!isPlainObject(link)) throw new Error('Each social link must be an object.');
@@ -110,7 +125,7 @@ function validateContent(input) {
 
   const navigation = input.navigation;
   if (!isPlainObject(navigation)) throw new Error('navigation must be an object.');
-  assertKeys(navigation, ['home', 'about', 'eventCenter', 'church'], 'navigation');
+  assertKeys(navigation, ['home', 'about', 'eventCenter', 'booking'], 'navigation');
   for (const key of Object.keys(navigation)) {
     const item = navigation[key];
     if (!isPlainObject(item)) throw new Error(`navigation.${key} is invalid.`);
@@ -122,7 +137,13 @@ function validateContent(input) {
   const hero = input.hero;
   if (!isPlainObject(hero)) throw new Error('hero must be an object.');
   assertKeys(hero, ['eyebrow', 'headline', 'intro', 'ctaLabel', 'ctaTarget', 'video', 'poster'], 'hero');
-  for (const field of ['eyebrow', 'headline', 'intro', 'ctaLabel', 'ctaTarget']) assertString(hero[field], maxLengths[field], `hero.${field}`, true);
+  for (const field of ['eyebrow', 'headline', 'intro', 'ctaLabel']) assertString(hero[field], maxLengths[field], `hero.${field}`, true);
+  // A free-text target would let a typo silently break the hero button (it
+  // drives goToSection(), which just no-ops on an unknown section), so this
+  // is a closed set rather than assertString.
+  if (!['home', 'about', 'eventCenter', 'booking', 'contact'].includes(hero.ctaTarget)) {
+    throw new Error('hero.ctaTarget must be one of: home, about, eventCenter, booking, contact.');
+  }
   assertMediaReference(hero.video, 'hero.video');
   assertMediaReference(hero.poster, 'hero.poster');
 
@@ -133,12 +154,23 @@ function validateContent(input) {
   assertString(statement.heading, maxLengths.heading, 'statement.heading', true);
   assertString(statement.copy, maxLengths.copy, 'statement.copy', true);
 
-  const church = input.church;
-  if (!isPlainObject(church)) throw new Error('church must be an object.');
-  assertKeys(church, ['eyebrow', 'heading', 'body'], 'church');
-  assertString(church.eyebrow, maxLengths.eyebrow, 'church.eyebrow', true);
-  assertString(church.heading, maxLengths.heading, 'church.heading', true);
-  assertString(church.body, maxLengths.paragraph, 'church.body', true);
+  const about = input.about;
+  if (!isPlainObject(about)) throw new Error('about must be an object.');
+  assertKeys(about, ['eyebrow', 'heading', 'headingEmphasis', 'body', 'ctaLabel', 'portraitImage', 'features'], 'about');
+  assertString(about.eyebrow, maxLengths.eyebrow, 'about.eyebrow', true);
+  assertString(about.heading, maxLengths.heading, 'about.heading', true);
+  assertString(about.headingEmphasis, maxLengths.heading, 'about.headingEmphasis', true);
+  assertString(about.body, maxLengths.paragraph, 'about.body', true);
+  assertString(about.ctaLabel, maxLengths.ctaLabel, 'about.ctaLabel', true);
+  assertMediaReference(about.portraitImage, 'about.portraitImage');
+  if (!Array.isArray(about.features) || about.features.length > 12) throw new Error('about.features is invalid.');
+  for (const feature of about.features) {
+    if (!isPlainObject(feature)) throw new Error('Each about feature must be an object.');
+    assertKeys(feature, ['title', 'description', 'image'], 'about.features[]');
+    assertString(feature.title, maxLengths.featureTitle, 'feature title', true);
+    assertString(feature.description, maxLengths.featureText, 'feature description', true);
+    assertMediaReference(feature.image, 'feature image');
+  }
 
   const contact = input.contact;
   if (!isPlainObject(contact)) throw new Error('contact must be an object.');
@@ -149,9 +181,15 @@ function validateContent(input) {
 
   const tours = input.tours;
   if (!isPlainObject(tours)) throw new Error('tours must be an object.');
-  assertKeys(tours, ['communityCenter', 'church'], 'tours');
+  assertKeys(tours, ['communityCenter'], 'tours');
   assertEmbedUrl(tours.communityCenter, 'tours.communityCenter');
-  assertEmbedUrl(tours.church, 'tours.church');
+
+  const theme = input.theme;
+  if (!isPlainObject(theme)) throw new Error('theme must be an object.');
+  assertKeys(theme, ['primary', 'background', 'text'], 'theme');
+  assertHexColor(theme.primary, 'theme.primary');
+  assertHexColor(theme.background, 'theme.background');
+  assertHexColor(theme.text, 'theme.text');
   return input;
 }
 
@@ -159,7 +197,17 @@ function readContent() {
   if (!fs.existsSync(contentFile)) return clone(defaults);
   try {
     const { revision, updatedAt, ...parsed } = JSON.parse(fs.readFileSync(contentFile, 'utf8'));
-    return { ...validateContent(parsed), revision: Number(revision) || 0, updatedAt: updatedAt || '' };
+    // Backfills any section/field the schema has grown since this file was
+    // last written (e.g. `about`/`theme` didn't always exist) -- without
+    // this, a file saved under an older schema fails validateContent's
+    // required-key checks outright and this whole function falls back to
+    // clone(defaults), silently discarding every real edit it has ever seen.
+    // `defaults` itself carries revision/updatedAt (for the plain
+    // clone(defaults) fallback elsewhere), so those have to come back out
+    // post-merge or assertKeys rejects them as top-level content fields.
+    const { revision: _r, updatedAt: _u, ...defaultsContentOnly } = defaults;
+    const merged = mergeContent(defaultsContentOnly, parsed);
+    return { ...validateContent(merged), revision: Number(revision) || 0, updatedAt: updatedAt || '' };
   } catch (error) {
     console.error('Failed to read site content; using defaults.', error.message || error);
     return clone(defaults);

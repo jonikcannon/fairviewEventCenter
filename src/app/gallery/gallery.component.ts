@@ -17,20 +17,15 @@ export type GalleryMediaKind = 'photos' | 'videos' | 'tour';
 })
 export class GalleryComponent {
   @Input() visibleGallery: GalleryItem[] = [];
-  @Input() activeGallery = 'Community Center';
   @Input() activeMediaKind: GalleryMediaKind = 'photos';
   @Input() tourUrl = '';
   @Input() galleryLoading = true;
   @Input() galleryPrefetching = false;
   @Input() galleryPrefetchCount = 0;
-  @Output() categoryChange = new EventEmitter<string>();
   @Output() mediaKindChange = new EventEmitter<GalleryMediaKind>();
   @Output() mediaClick = new EventEmitter<GalleryItem>();
   @Output() mediaLoaded = new EventEmitter<void>();
 
-  // The two areas of the venue a visitor can book, not the old photography
-  // portfolio categories (Nature/Beach/etc.) this list used to hold.
-  readonly categories = ['Community Center', 'Church'];
   readonly mediaKinds: { value: GalleryMediaKind; label: string }[] = [
     { value: 'photos', label: 'Photos' },
     { value: 'videos', label: 'Videos' },
@@ -47,10 +42,6 @@ export class GalleryComponent {
     return this.sanitizer.bypassSecurityTrustResourceUrl(this.tourUrl);
   }
 
-  onCategoryChange(category: string) {
-    this.categoryChange.emit(category);
-  }
-
   onMediaKindChange(kind: GalleryMediaKind) {
     this.mediaKindChange.emit(kind);
   }
@@ -61,10 +52,6 @@ export class GalleryComponent {
 
   onMediaLoaded() {
     this.mediaLoaded.emit();
-  }
-
-  trackByCategory(_: number, category: string) {
-    return category;
   }
 
   trackByMediaKind(_: number, kind: { value: GalleryMediaKind; label: string }) {

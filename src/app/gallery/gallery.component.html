@@ -7,13 +7,6 @@
     <p class="service-lede">A look at the rooms and grounds available to book below.</p>
   </div>
   <div class="gallery-tabs">
-    <button *ngFor="let category of categories; trackBy: trackByCategory"
-            [class.active]="activeGallery === category"
-            (click)="onCategoryChange(category)">
-      {{category}}
-    </button>
-  </div>
-  <div class="gallery-tabs gallery-media-kinds">
     <button *ngFor="let kind of mediaKinds; trackBy: trackByMediaKind"
             [class.active]="activeMediaKind === kind.value"
             (click)="onMediaKindChange(kind.value)">
@@ -23,10 +16,10 @@
 
   <ng-container *ngIf="activeMediaKind === 'tour'; else mediaGrid">
     <div class="gallery-tour" *ngIf="safeTourUrl; else emptyTour">
-      <iframe [src]="safeTourUrl" title="{{activeGallery}} virtual tour" allow="fullscreen; xr-spatial-tracking" allowfullscreen loading="lazy"></iframe>
+      <iframe [src]="safeTourUrl" title="Community Center virtual tour" allow="fullscreen; xr-spatial-tracking" allowfullscreen loading="lazy"></iframe>
     </div>
     <ng-template #emptyTour>
-      <p class="gallery-empty">A virtual tour for {{activeGallery}} isn't available yet.</p>
+      <p class="gallery-empty">A virtual tour isn't available yet.</p>
     </ng-template>
   </ng-container>
 
@@ -66,7 +59,7 @@
       <p>Loading more…</p>
     </div>
     <ng-template #emptyGallery>
-      <p class="gallery-empty">{{activeGallery}} {{activeMediaKind}} will appear here once they're added.</p>
+      <p class="gallery-empty">{{activeMediaKind}} will appear here once they're added.</p>
     </ng-template>
   </ng-template>
 </section>

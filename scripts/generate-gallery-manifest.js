@@ -25,8 +25,7 @@ const galleryRoot = resolveMediaDir();
 const output = path.join(galleryRoot, 'gallery-manifest.json');
 const categories = CATEGORIES;
 const categoryLabels = {
-  'community-center': 'Community Center',
-  'church-services': 'Church services'
+  'community-center': 'Community Center'
 };
 const supported = new Set(['.jpg', '.jpeg', '.png', '.webp', '.avif', '.mp4']);
 const videoExtensions = new Set(['.mp4']);

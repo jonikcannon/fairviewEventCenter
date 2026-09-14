@@ -1,1 +1,6 @@
+/* Admin-editable brand palette. Defaults match the site's original hardcoded
+   look exactly, so this is a no-op until an admin actually changes one --
+   see AppComponent.applyTheme(), which overrides these at runtime from
+   content.theme after /api/content loads. */
+:root{--color-primary:#26362e;--color-background:#f4f2ec;--color-text:#1f211d}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0}button,a{font:inherit}a{text-decoration:none}

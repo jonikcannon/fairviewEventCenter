@@ -137,6 +137,15 @@ async function getObjectText(client, key) {
   }
 }
 
+// Uploads one object's bytes to the bucket. Used by admin upload endpoints
+// (venue gallery, site branding media) so a file saved locally is also
+// actually reachable at its public CDN URL, rather than only appearing once
+// someone next runs `npm run media:sync` by hand.
+async function putObject(client, key, body, contentType) {
+  const { PutObjectCommand } = require('@aws-sdk/client-s3');
+  await client.send(new PutObjectCommand({ Bucket: config.bucket, Key: key, Body: body, ContentType: contentType }));
+}
+
 const CONTENT_TYPES = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -164,5 +173,6 @@ module.exports = {
   toObjectKey,
   fromObjectKey,
   toPublicUrl,
-  contentTypeFor
+  contentTypeFor,
+  putObject
 };

@@ -4,15 +4,10 @@ import { FormsModule } from '@angular/forms';
 
 export type BookingSlot = {
   id: string;
-  service: string;
-  /** Calendar day, YYYY-MM-DD. One slot is one bookable start time on that day. */
+  /** Calendar day, YYYY-MM-DD. Bookings are whole days: at most one slot exists per date. */
   date: string;
-  /** 24-hour HH:MM. Empty on slots published before booking moved to clock times. */
-  startTime: string;
-  endTime: string;
-  approxDurationMinutes: number;
   location: string;
-  /** All money is in cents, matching the API. */
+  /** All money is in cents, matching the API. Always the flat event-space rate. */
   sessionFee: number;
   deposit: number;
   balanceDue: number;
@@ -27,24 +22,18 @@ export type BookingRequest = {
 };
 
 /**
- * A date with no published session yet, reserved on request. There is no
- * studio-set fee to hold against, so the server prices the deposit from a
- * per-service starting-price table and creates the slot on demand -- but the
- * checkout itself is the same Stripe deposit flow as booking a published time.
+ * A date with no slot yet, reserved on request. There is no existing slot to
+ * hold against, so the server creates one on demand at the flat event-space
+ * rate -- but the checkout itself is the same Stripe deposit flow as booking
+ * a date that already has a slot.
  */
 export type BookingDateRequest = {
   date: string;
-  /** 24-hour HH:MM -- required, unlike a published slot's optional startTime, since this creates the slot. */
-  startTime: string;
-  service: string;
   name: string;
   email: string;
   phone: string;
   notes: string;
 };
-
-/** One published day, with every start time still open on it. */
-type DayGroup = { date: string; label: string; slots: BookingSlot[] };
 
 @Component({
   selector: 'app-booking',
@@ -56,106 +45,119 @@ type DayGroup = { date: string; label: string; slots: BookingSlot[] };
 })
 export class BookingComponent {
   @Input() slots: BookingSlot[] = [];
+  // Dates that are actually taken (booked, or held while someone is paying a
+  // deposit right now) -- the only thing that should ever disable a day.
+  // Days are open by default; a missing entry here just means nobody has
+  // booked it, not that it isn't offered.
+  @Input() bookedDates: string[] = [];
+  // Recurring weekly closures, as JS weekday numbers (0=Sun..6=Sat), plus
+  // specific dates that are exceptions to them.
+  @Input() closedWeekdays: number[] = [];
+  @Input() unblockedDates: string[] = [];
   @Input() loading = false;
   @Input() submitting = false;
   @Input() error = '';
   @Input() refundPolicy = '';
   @Input() holdMinutes = 15;
-  // Service names to offer on the "request a date" form when nothing is
-  // published yet, so it does not have to wait on slots to know what a
-  // visitor might ask for.
-  @Input() serviceCatalog: string[] = [];
   @Input() requestSubmitting = false;
   @Output() book = new EventEmitter<BookingRequest>();
   @Output() enquire = new EventEmitter<void>();
   @Output() requestDate = new EventEmitter<BookingDateRequest>();
 
   selectedSlotId = '';
-  selectedDateInput = '';
-  serviceFilter = 'all';
   calendarMonth = this.firstOfMonth(new Date());
   formError = '';
   form = { name: '', email: '', phone: '', notes: '' };
 
   requestDateInput = '';
-  requestForm = { service: '', startTime: '', name: '', email: '', phone: '', notes: '' };
+  requestForm = { name: '', email: '', phone: '', notes: '' };
 
-  // Nothing published anywhere -- not just nothing matching the current
-  // service filter. Drives whether the calendar lets a visitor request a date
-  // instead of only picking one with real open times.
+  // Nothing has a slot anywhere yet. Only drives the "No days are open..."
+  // banner text; it no longer gates whether a date is clickable (see
+  // calendarDays below) -- every day is bookable by default regardless.
   get isEmpty(): boolean {
     return !this.slots.length;
   }
 
-  get visibleSlots(): BookingSlot[] {
-    if (this.serviceFilter === 'all') return this.slots;
-    return this.slots.filter(slot => slot.service === this.serviceFilter);
+  get selectedSlot(): BookingSlot | null {
+    return this.slots.find(slot => slot.id === this.selectedSlotId) || null;
   }
 
-  get selectedSlot(): BookingSlot | null {
-    return this.visibleSlots.find(slot => slot.id === this.selectedSlotId) || null;
+  // Drives the plain "Choose a date" input: whatever day is currently picked,
+  // either as a real open slot or as a request-this-date draft.
+  get selectedDateValue(): string {
+    return this.selectedSlot?.date || this.requestDateInput || '';
   }
 
   get todayDateValue(): string {
     return this.toDateKey(new Date());
   }
 
-  get serviceOptions(): string[] {
-    return Array.from(new Set(this.slots.map(slot => slot.service))).sort((left, right) => left.localeCompare(right));
-  }
-
   get calendarMonthLabel(): string {
     return this.parseDay(this.toDateKey(this.calendarMonth)).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
   }
 
-  get calendarDays(): Array<{ date: string | null; inMonth: boolean; slots: BookingSlot[]; available: boolean; requestable: boolean; selected: boolean }> {
+  // True when a recurring weekly closure covers this date and nothing
+  // unblocks it -- mirrors isBlocked() in fairviewApi/booking.js exactly, off
+  // the public-safe closedWeekdays/unblockedDates inputs.
+  isDateClosed(date: string): boolean {
+    if (this.unblockedDates.includes(date)) return false;
+    return this.closedWeekdays.includes(this.parseDay(date).getDay());
+  }
+
+  isDateBooked(date: string): boolean {
+    return this.bookedDates.includes(date);
+  }
+
+  get calendarDays(): Array<{ date: string | null; inMonth: boolean; slot: BookingSlot | null; available: boolean; requestable: boolean; unavailable: boolean; selected: boolean }> {
     const monthStart = new Date(this.calendarMonth.getFullYear(), this.calendarMonth.getMonth(), 1);
     const firstWeekDay = monthStart.getDay();
     const start = new Date(monthStart);
     start.setDate(monthStart.getDate() - firstWeekDay);
-    const days: Array<{ date: string | null; inMonth: boolean; slots: BookingSlot[]; available: boolean; requestable: boolean; selected: boolean }> = [];
+    const days: Array<{ date: string | null; inMonth: boolean; slot: BookingSlot | null; available: boolean; requestable: boolean; unavailable: boolean; selected: boolean }> = [];
     const today = this.todayDateValue;
-    const isEmpty = this.isEmpty;
 
     for (let index = 0; index < 42; index += 1) {
       const current = new Date(start);
       current.setDate(start.getDate() + index);
       const dateKey = this.toDateKey(current);
-      const dateSlots = this.visibleSlots.filter(slot => slot.date === dateKey);
-      const available = dateSlots.length > 0;
+      const slot = this.slots.find(entry => entry.date === dateKey) || null;
+      // A slot already exists for this date (someone has held, requested, or
+      // been manually booked into it before) -- always bookable at the flat rate.
+      const available = !!slot;
+      const isPast = dateKey < today;
+      const taken = this.isDateBooked(dateKey) || this.isDateClosed(dateKey);
       days.push({
         date: dateKey,
         inMonth: current.getMonth() === monthStart.getMonth(),
-        slots: dateSlots,
+        slot,
         available,
-        // Nothing is published anywhere yet, so let a visitor pick any
-        // upcoming day to ask for it instead of a calendar that is entirely
-        // disabled. Once real sessions exist, picking a date goes back to
-        // choosing among the actual open times.
-        requestable: isEmpty && !available && dateKey >= today,
-        selected: this.selectedDateInput === dateKey || this.requestDateInput === dateKey
+        // Days are open by default: anything not already booked, closed, or
+        // in the past is bookable via the "request this date" flow, which
+        // creates the slot on demand at the flat event-space rate.
+        requestable: !available && !taken && !isPast,
+        unavailable: isPast || taken,
+        selected: this.selectedDateValue === dateKey
       });
     }
     return days;
   }
 
-  /** The open start times on the chosen day, in clock order. */
-  get timesForSelectedDate(): BookingSlot[] {
-    if (!this.selectedDateInput) return [];
-    return this.visibleSlots
-      .filter(slot => slot.date === this.selectedDateInput)
-      .sort((left, right) => String(left.startTime).localeCompare(String(right.startTime)));
-  }
-
-  // One entry per published day rather than per start time: with a full day of
-  // sessions a flat list would run to dozens of near-identical cards.
-  get dayGroups(): DayGroup[] {
-    const groups = new Map<string, DayGroup>();
-    for (const slot of this.visibleSlots) {
-      if (!groups.has(slot.date)) groups.set(slot.date, { date: slot.date, label: this.formatDay(slot.date), slots: [] });
-      groups.get(slot.date)!.slots.push(slot);
-    }
-    return Array.from(groups.values()).sort((left, right) => left.date.localeCompare(right.date));
+  // Scoped to whatever month the calendar above is currently showing, so the
+  // scrollable strip stays in sync with the ← / → month nav instead of always
+  // listing every booked day site-wide. bookedDates carries no price or
+  // customer info (see the input's doc comment) -- only the date -- which is
+  // exactly right for a read-only "here's what's taken" reference; there is
+  // nothing to click into.
+  get monthBookedDates(): string[] {
+    const year = this.calendarMonth.getFullYear();
+    const month = this.calendarMonth.getMonth();
+    return this.bookedDates
+      .filter(date => {
+        const day = this.parseDay(date);
+        return day.getFullYear() === year && day.getMonth() === month;
+      })
+      .sort((left, right) => left.localeCompare(right));
   }
 
   // Dates are plain calendar days. Parsing them as local time avoids the
@@ -186,49 +188,20 @@ export class BookingComponent {
     return this.parseDay(date).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
   }
 
-  // Renders 24-hour "14:30" in the viewer's own convention, so a US visitor sees
-  // 2:30 PM without the studio having to publish times twice.
-  formatTime(time: string): string {
-    if (!/^\d{2}:\d{2}$/.test(String(time || ''))) return '';
-    const [hours, minutes] = time.split(':').map(Number);
-    const at = new Date();
-    at.setHours(hours, minutes, 0, 0);
-    return at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  }
-
-  timeRange(slot: BookingSlot): string {
-    const start = this.formatTime(slot.startTime);
-    if (!start) return 'Time to be agreed';
-    const end = this.formatTime(slot.endTime);
-    return end ? `${start} – ${end}` : start;
-  }
-
   money(cents: number): string {
     return `$${((Number(cents) || 0) / 100).toFixed(2)}`;
-  }
-
-  duration(minutes: number): string {
-    if (!minutes) return '';
-    if (minutes < 60) return `${minutes} min`;
-    const hours = Math.floor(minutes / 60);
-    const rest = minutes % 60;
-    return rest ? `${hours}h ${rest}m` : `${hours}h`;
   }
 
   shiftCalendarMonth(offset: number) {
     this.calendarMonth = new Date(this.calendarMonth.getFullYear(), this.calendarMonth.getMonth() + offset, 1);
   }
 
-  // Picking a day only opens that day's times -- the booking is not made until a
-  // start time is chosen, so a stray click on the calendar cannot skip ahead to
-  // the deposit form.
-  selectCalendarDate(day: { date: string | null; slots: BookingSlot[]; requestable: boolean }) {
+  // Picking an open day goes straight to the deposit form -- a day is the
+  // whole bookable unit now, so there is no intermediate time-of-day step.
+  selectCalendarDate(day: { date: string | null; slot: BookingSlot | null; requestable: boolean }) {
     if (!day.date) return;
-    if (day.slots.length) {
-      this.formError = '';
-      this.selectedSlotId = '';
-      this.selectedDateInput = day.date;
-      this.requestDateInput = '';
+    if (day.slot) {
+      this.select(day.slot);
       return;
     }
     if (day.requestable) {
@@ -239,35 +212,35 @@ export class BookingComponent {
   }
 
   selectDateInput(date: string) {
-    this.selectedDateInput = date;
-    this.selectedSlotId = '';
-    // Cleared up front so emptying the date input also clears a message left by
-    // the previous pick, rather than leaving it stranded over a blank calendar.
     this.formError = '';
-    this.requestDateInput = '';
-    if (!date) return;
+    if (!date) {
+      this.clearDate();
+      return;
+    }
     this.calendarMonth = this.firstOfMonth(this.parseDay(date));
-    if (this.visibleSlots.some(slot => slot.date === date)) return;
-    this.selectedDateInput = '';
-    if (this.isEmpty && date >= this.todayDateValue) {
+    const slot = this.slots.find(entry => entry.date === date);
+    if (slot) {
+      this.select(slot);
+      return;
+    }
+    this.selectedSlotId = '';
+    const isTaken = this.isDateBooked(date) || this.isDateClosed(date);
+    if (!isTaken && date >= this.todayDateValue) {
       this.selectRequestDate(date);
       return;
     }
-    this.formError = 'No sessions are open on that date for the selected service.';
+    this.requestDateInput = '';
+    this.formError = 'That date is not available.';
   }
 
   // Opens the "request this date" form -- used both from the calendar grid and
   // the plain date input, so both agree on when a request is even offered
-  // (isEmpty, not in the past).
+  // (not booked, not closed, not in the past).
   selectRequestDate(date: string) {
     this.formError = '';
     this.selectedSlotId = '';
-    this.selectedDateInput = '';
     this.requestDateInput = date;
     this.calendarMonth = this.firstOfMonth(this.parseDay(date));
-    if (!this.requestForm.service) {
-      this.requestForm.service = this.serviceCatalog[0] || '';
-    }
   }
 
   cancelRequest() {
@@ -279,16 +252,6 @@ export class BookingComponent {
     if (!this.requestDateInput || this.requestSubmitting) return;
     const name = this.requestForm.name.trim();
     const email = this.requestForm.email.trim();
-    const service = this.requestForm.service.trim();
-    const startTime = this.requestForm.startTime.trim();
-    if (!service) {
-      this.formError = 'Please choose or describe what you are looking for.';
-      return;
-    }
-    if (!/^\d{2}:\d{2}$/.test(startTime)) {
-      this.formError = 'Please choose a start time.';
-      return;
-    }
     if (name.length < 2) {
       this.formError = 'Please enter your name.';
       return;
@@ -303,8 +266,6 @@ export class BookingComponent {
     // and the visitor's entries stay on screen to retry rather than vanishing.
     this.requestDate.emit({
       date: this.requestDateInput,
-      startTime,
-      service,
       name,
       email,
       phone: this.requestForm.phone.trim(),
@@ -312,26 +273,15 @@ export class BookingComponent {
     });
   }
 
-  onServiceFilterChange(value: string) {
-    this.serviceFilter = value;
-    this.selectedSlotId = '';
-    this.selectedDateInput = '';
-    this.formError = '';
-    const firstAvailable = this.visibleSlots[0];
-    if (firstAvailable) {
-      this.calendarMonth = this.firstOfMonth(this.parseDay(firstAvailable.date));
-    }
-  }
-
   select(slot: BookingSlot) {
     this.selectedSlotId = slot.id;
-    this.selectedDateInput = slot.date;
+    this.requestDateInput = '';
     this.formError = '';
   }
 
-  // Drops back to the chosen day's times rather than all the way to an empty
-  // calendar: someone changing their mind usually wants a different hour, not a
-  // different month.
+  // Drops back to the calendar rather than clearing the month: someone
+  // changing their mind usually wants a different day nearby, not to start
+  // browsing from scratch.
   cancel() {
     this.selectedSlotId = '';
     this.formError = '';
@@ -339,7 +289,7 @@ export class BookingComponent {
 
   clearDate() {
     this.selectedSlotId = '';
-    this.selectedDateInput = '';
+    this.requestDateInput = '';
     this.formError = '';
   }
 
@@ -366,15 +316,11 @@ export class BookingComponent {
     });
   }
 
-  trackBySlot(_: number, slot: BookingSlot) {
-    return slot.id;
+  trackByDate(_: number, date: string) {
+    return date;
   }
 
   trackByCalendarDay(_: number, day: { date: string | null }) {
     return day.date || `empty-${_}`;
-  }
-
-  trackByGroup(_: number, group: DayGroup) {
-    return group.date;
   }
 }

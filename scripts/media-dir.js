@@ -9,7 +9,7 @@ const path = require('path');
 //
 // This deliberately sits outside src/, so the Angular build never copies it and
 // git never tracks it.
-const CATEGORIES = ['community-center', 'church', 'church-services'];
+const CATEGORIES = ['community-center'];
 
 function resolveMediaDir() {
   const configured = String(process.env.MEDIA_DIR || '').trim();

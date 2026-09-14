@@ -2,7 +2,7 @@
 //
 // Most media reaches the app through the gallery manifest, which already
 // carries absolute CDN URLs. But a handful of paths are hard-coded in
-// templates and in the services list -- the hero video among them, at 206 MB.
+// templates and in the services list -- the hero video among them, at 210 MB.
 // Left relative, those resolve against the app's own origin, which then has to
 // redirect each one to the bucket: an extra round trip per visitor, and a hard
 // dependency on the origin having a gallery route at all.

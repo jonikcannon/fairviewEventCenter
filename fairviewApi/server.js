@@ -28,7 +28,7 @@ if (!fs.existsSync(productsDir)) fs.mkdirSync(productsDir, { recursive: true });
 const { resolveMediaDir, CATEGORIES } = require('../scripts/media-dir');
 const {
   config: r2Config, isR2Configured, isCdnEnabled, createR2Client,
-  toObjectKey: toR2Key, toPublicUrl: toR2Url
+  toObjectKey: toR2Key, toPublicUrl: toR2Url, putObject: putR2Object, contentTypeFor
 } = require('../scripts/r2');
 const galleryDir = resolveMediaDir();
 if (!fs.existsSync(galleryDir)) fs.mkdirSync(galleryDir, { recursive: true });
@@ -182,13 +182,11 @@ async function sendBookingEmails(booking) {
   if (!transporter || !from) return false;
 
   const lines = [
-    `Service: ${booking.service}`,
     `Date: ${booking.date}`,
-    // agreedTime wins: if the studio has already moved the shoot by hand, that
-    // is the time the client needs to see, not the one they picked at checkout.
-    `Start time: ${booking.agreedTime || booking.startTime || 'to be agreed'}`,
+    'Event space, 9am - 10pm',
+    booking.agreedTime ? `Agreed arrival time: ${booking.agreedTime}` : '',
     booking.location ? `Location: ${booking.location}` : '',
-    `Session fee: ${formatMoney(booking.sessionFee)}`,
+    `Rental fee: ${formatMoney(booking.sessionFee)}`,
     `Deposit paid: ${formatMoney(booking.deposit)}`,
     `Balance due on the day: ${formatMoney(booking.balanceDue)}`
   ].filter(Boolean);
@@ -202,7 +200,7 @@ async function sendBookingEmails(booking) {
       text: [
         `Thank you ${booking.name || ''}`.trim() + ',',
         '',
-        'Your session is reserved. We will be in touch if anything needs to move.',
+        'Your day is reserved. We will be in touch if anything needs to move.',
         '',
         ...lines,
         '',
@@ -218,7 +216,7 @@ async function sendBookingEmails(booking) {
       from,
       to: studio,
       replyTo: booking.email || undefined,
-      subject: `[Fairview Event Center] Booking confirmed - ${booking.service} on ${booking.date}`,
+      subject: `[Fairview Event Center] Booking confirmed - ${booking.date}`,
       text: [
         `Booking: ${booking.id}`,
         `Client: ${booking.name || 'not supplied'} <${booking.email || 'no email'}>`,
@@ -228,7 +226,7 @@ async function sendBookingEmails(booking) {
         '',
         booking.notes ? `Notes:\n${booking.notes}` : 'No notes supplied.',
         '',
-        'The client booked this start time. Use the admin panel to move it if needed.'
+        'Set the agreed arrival time in the admin panel once confirmed with the client.'
       ].filter(Boolean).join('\n')
     });
   }
@@ -543,6 +541,23 @@ async function moveGalleryObjectInR2(fromRelative, toRelative) {
     CopySource: `${r2Config.bucket}/${fromKey}`.split('/').map(encodeURIComponent).join('/')
   }));
   await r2Client.send(new DeleteObjectCommand({ Bucket: r2Config.bucket, Key: fromKey }));
+}
+
+// Writes an uploaded file's bytes to local disk under storage/media/<folder>/,
+// and -- when R2 is configured -- also pushes them to the bucket so the
+// upload is actually reachable at its public CDN URL right away, rather than
+// only appearing after someone next runs `npm run media:sync` by hand.
+async function saveGalleryMediaFile(folder, fileName, buffer) {
+  const dir = path.join(galleryDir, folder);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, fileName), buffer);
+  if (r2Client && isR2Configured()) {
+    try {
+      await putR2Object(r2Client, toR2Key(`${folder}/${fileName}`), buffer, contentTypeFor(fileName));
+    } catch (error) {
+      console.error(`R2 upload failed for ${folder}/${fileName}; file saved locally only:`, error.message || error);
+    }
+  }
 }
 
 // Category folders on disk are the authoring view, but a host that serves
@@ -1101,10 +1116,6 @@ app.patch('/api/admin/gallery/category', auth, async (req, res) => {
   });
 });
 
-const CHURCH_SERVICES_FOLDER = 'church-services';
-const CHURCH_SERVICES_LABEL = 'Church services';
-const churchServicesDir = path.join(galleryDir, CHURCH_SERVICES_FOLDER);
-
 function readGalleryManifest() {
   try {
     return JSON.parse(fs.readFileSync(galleryManifestPath, 'utf8'));
@@ -1117,81 +1128,17 @@ function writeGalleryManifest(items) {
   fs.writeFileSync(galleryManifestPath, `${JSON.stringify(items, null, 2)}\n`, 'utf8');
 }
 
-// Lets the admin add photos/videos for visitors to see on the Church page
-// without touching the CLI media pipeline. Writes straight to the same
-// category folder the gallery manifest is generated from, so a plain drop-in
-// photo and an admin upload end up indistinguishable on disk.
-app.post('/api/admin/church-services', auth, async (req, res) => {
-  const title = String(req.body?.title || '').trim();
-  const media = req.body?.media;
-  if (!title || !media?.data || !media?.name || !media?.mimeType) {
-    return res.status(400).json({ error: 'Title and media are required.' });
-  }
-  const isVideo = media.mimeType.startsWith('video/');
-  if (!isVideo && !media.mimeType.startsWith('image/')) {
-    return res.status(400).json({ error: 'Only image or video files are supported.' });
-  }
-
-  try {
-    fs.mkdirSync(churchServicesDir, { recursive: true });
-    const ext = path.extname(media.name) || (isVideo ? '.mp4' : '.jpg');
-    const fileName = `${randomUUID()}${ext}`;
-    fs.writeFileSync(path.join(churchServicesDir, fileName), Buffer.from(media.data, 'base64'));
-
-    const relativeImage = `assets/gallery/${CHURCH_SERVICES_FOLDER}/${encodeURIComponent(fileName)}`;
-    const item = {
-      category: CHURCH_SERVICES_LABEL,
-      title,
-      image: toGalleryPublicImage(relativeImage),
-      mediaType: isVideo ? 'video' : 'image'
-    };
-
-    const manifest = readGalleryManifest();
-    manifest.push(item);
-    writeGalleryManifest(manifest);
-
-    return res.status(201).json(item);
-  } catch (error) {
-    console.error('Church services upload failed:', error);
-    return res.status(500).json({ error: 'Upload failed.' });
-  }
-});
-
-app.delete('/api/admin/church-services/:fileName', auth, (req, res) => {
-  const fileName = String(req.params.fileName || '').trim();
-  // basename() strips any directory components a crafted param might carry,
-  // so this can never resolve outside churchServicesDir.
-  const safeName = path.basename(decodeURIComponent(fileName));
-  if (!safeName || safeName !== decodeURIComponent(fileName)) {
-    return res.status(400).json({ error: 'File name is invalid.' });
-  }
-
-  const filePath = path.join(churchServicesDir, safeName);
-  try {
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    const relativeImage = `assets/gallery/${CHURCH_SERVICES_FOLDER}/${encodeURIComponent(safeName)}`;
-    const publicImage = toGalleryPublicImage(relativeImage);
-    const manifest = readGalleryManifest().filter(item => item.image !== publicImage);
-    writeGalleryManifest(manifest);
-    return res.json({ ok: true });
-  } catch (error) {
-    console.error('Church services delete failed:', error);
-    return res.status(500).json({ error: 'Could not delete this file.' });
-  }
-});
-
-// The venue gallery ("See the space") has exactly two admin-manageable
-// categories -- the two areas of the building visitors can book -- unlike
-// church-services above, which is a single fixed folder for the separate
-// Church ministry page.
-const VENUE_GALLERY_FOLDERS = { 'community-center': 'Community Center', church: 'Church' };
+// The venue gallery's one admin-manageable category ("See the space" /
+// Community Center). Kept as a lookup table (rather than a bare string
+// check) so a second area of the venue can be added later the same way.
+const VENUE_GALLERY_FOLDERS = { 'community-center': 'Community Center' };
 
 app.post('/api/admin/venue-gallery', auth, async (req, res) => {
   const category = String(req.body?.category || '').trim().toLowerCase();
   const title = String(req.body?.title || '').trim();
   const media = req.body?.media;
   const label = VENUE_GALLERY_FOLDERS[category];
-  if (!label) return res.status(400).json({ error: 'Category must be community-center or church.' });
+  if (!label) return res.status(400).json({ error: 'Category must be community-center.' });
   if (!title || !media?.data || !media?.name || !media?.mimeType) {
     return res.status(400).json({ error: 'Title and media are required.' });
   }
@@ -1201,11 +1148,9 @@ app.post('/api/admin/venue-gallery', auth, async (req, res) => {
   }
 
   try {
-    const categoryDir = path.join(galleryDir, category);
-    fs.mkdirSync(categoryDir, { recursive: true });
     const ext = path.extname(media.name) || (isVideo ? '.mp4' : '.jpg');
     const fileName = `${randomUUID()}${ext}`;
-    fs.writeFileSync(path.join(categoryDir, fileName), Buffer.from(media.data, 'base64'));
+    await saveGalleryMediaFile(category, fileName, Buffer.from(media.data, 'base64'));
 
     const relativeImage = `assets/gallery/${category}/${encodeURIComponent(fileName)}`;
     const item = {
@@ -1229,7 +1174,7 @@ app.post('/api/admin/venue-gallery', auth, async (req, res) => {
 app.delete('/api/admin/venue-gallery/:category/:fileName', auth, (req, res) => {
   const category = String(req.params.category || '').trim().toLowerCase();
   const label = VENUE_GALLERY_FOLDERS[category];
-  if (!label) return res.status(400).json({ error: 'Category must be community-center or church.' });
+  if (!label) return res.status(400).json({ error: 'Category must be community-center.' });
 
   const fileName = String(req.params.fileName || '').trim();
   // basename() strips any directory components a crafted param might carry,
@@ -1250,6 +1195,43 @@ app.delete('/api/admin/venue-gallery/:category/:fileName', auth, (req, res) => {
   } catch (error) {
     console.error('Venue gallery delete failed:', error);
     return res.status(500).json({ error: 'Could not delete this file.' });
+  }
+});
+
+// Site-branding media (hero background video/poster, About portrait)
+// uploaded from the admin Site content form. Distinct from venue-gallery
+// uploads above: these live in storage/media/site/, a folder outside
+// CATEGORIES, so generate-gallery-manifest.js's category walk never sees
+// them -- they can never show up as a gallery item or product.
+//
+// Returns the bare relative path, not a CDN-absolute URL: content.js's
+// assertMediaReference requires values to start with "assets/gallery/", and
+// the frontend's mediaUrl() is what resolves that relative path to the CDN
+// at render time (see AppComponent.heroVideo/heroPoster, AboutComponent).
+const SITE_MEDIA_SLOTS = new Set(['heroVideo', 'heroPoster', 'aboutPortrait', 'aboutFeature', 'siteLogo']);
+
+app.post('/api/admin/content-media', auth, async (req, res) => {
+  const slot = String(req.body?.slot || '').trim();
+  const media = req.body?.media;
+  if (!SITE_MEDIA_SLOTS.has(slot)) return res.status(400).json({ error: 'Unknown media slot.' });
+  if (!media?.data || !media?.name || !media?.mimeType) {
+    return res.status(400).json({ error: 'Media is required.' });
+  }
+  const isVideo = media.mimeType.startsWith('video/');
+  if (!isVideo && !media.mimeType.startsWith('image/')) {
+    return res.status(400).json({ error: 'Only image or video files are supported.' });
+  }
+  if (slot === 'heroVideo' && !isVideo) return res.status(400).json({ error: 'The hero background must be a video file.' });
+  if (slot !== 'heroVideo' && isVideo) return res.status(400).json({ error: 'That slot only accepts an image.' });
+
+  try {
+    const ext = path.extname(media.name) || (isVideo ? '.mp4' : '.jpg');
+    const fileName = `${slot}-${randomUUID()}${ext}`;
+    await saveGalleryMediaFile('site', fileName, Buffer.from(media.data, 'base64'));
+    return res.status(201).json({ image: `assets/gallery/site/${encodeURIComponent(fileName)}` });
+  } catch (error) {
+    console.error('Site media upload failed:', error);
+    return res.status(500).json({ error: 'Upload failed.' });
   }
 });
 
@@ -1436,12 +1418,17 @@ app.post('/api/checkout/cart', async (req, res) => {
 
 // ---------------------------------------------------------------- booking
 app.get('/api/booking/slots', (req, res) => {
+  const from = String(req.query.from || '').trim();
+  const to = String(req.query.to || '').trim();
   res.json({
-    slots: bookingStore.listOpenSlots({
-      from: String(req.query.from || '').trim(),
-      to: String(req.query.to || '').trim(),
-      service: String(req.query.service || '').trim()
-    }),
+    slots: bookingStore.listOpenSlots({ from, to }),
+    // Lets the calendar tell "already taken" apart from "nothing booked
+    // there yet" -- days are open by default, so the frontend needs this to
+    // know which specific dates to grey out instead of graying out
+    // everything that has no slot. See listUnavailableDates().
+    bookedDates: bookingStore.listUnavailableDates({ from, to }),
+    closedWeekdays: bookingStore.listClosedWeekdays(),
+    unblockedDates: bookingStore.listUnblockedDates({ from, to }),
     depositRate: bookingStore.DEPOSIT_RATE,
     refundPolicy: bookingStore.refundPolicyText(),
     holdMinutes: bookingStore.holdMinutes()
@@ -1463,8 +1450,8 @@ async function holdSlotAndCheckout(slotId, { name, email, phone, notes }) {
     email: booking.email,
     items: [{
       productId: '',
-      sku: `BOOKING-${booking.date}${booking.startTime ? `-${booking.startTime}` : ''}`,
-      title: `${booking.service} session deposit (${booking.date}${booking.startTime ? ` at ${booking.startTime}` : ''})`,
+      sku: `BOOKING-${booking.date}`,
+      title: `Event space deposit (${booking.date})`,
       mediaType: 'image',
       imageKey: '',
       quantity: 1,
@@ -1491,8 +1478,8 @@ async function holdSlotAndCheckout(slotId, { name, email, phone, notes }) {
           currency: 'usd',
           unit_amount: booking.deposit,
           product_data: {
-            name: `${booking.service} session deposit`,
-            description: `Reserves ${booking.date}. Balance of $${(booking.balanceDue / 100).toFixed(2)} due on the day. ${booking.refundPolicy}`
+            name: 'Event space deposit',
+            description: `Reserves ${booking.date}, 9am - 10pm. Balance of $${(booking.balanceDue / 100).toFixed(2)} due on the day. ${booking.refundPolicy}`
           }
         }
       }],
@@ -1531,10 +1518,9 @@ app.post('/api/booking/hold', rateLimit({ windowMs: 900000, max: 20, message: { 
   res.json(result.body);
 });
 
-// A visitor requesting a date with nothing published: creates the slot on
-// demand (priced from the service's listed starting price, since there is no
-// studio-set fee to read yet) and then reuses the exact same hold + Stripe
-// pipeline as booking an already-published time.
+// A visitor requesting a date with no slot yet: creates one on demand at the
+// flat event-space rate, then reuses the exact same hold + Stripe pipeline as
+// booking a date that already has a slot.
 app.post('/api/booking/request-hold', rateLimit({ windowMs: 900000, max: 20, message: { error: 'Too many booking attempts. Please try again shortly.' } }), async (req, res) => {
   const name = String(req.body?.name || '').trim();
   const email = String(req.body?.email || '').trim();
@@ -1543,9 +1529,7 @@ app.post('/api/booking/request-hold', rateLimit({ windowMs: 900000, max: 20, mes
   if (!stripe) return res.status(503).json({ error: 'Stripe is not configured yet.' });
 
   const created = bookingStore.createRequestedSlot({
-    service: req.body?.service,
-    date: req.body?.date,
-    startTime: req.body?.startTime
+    date: req.body?.date
   });
   if (created.error) return res.status(created.status || 400).json({ error: created.error });
 
@@ -1568,6 +1552,25 @@ app.get('/api/admin/bookings', auth, (req, res) => {
   res.json({ bookings: !status || status === 'all' ? all : all.filter(booking => booking.status === status) });
 });
 
+// Records a reservation taken outside the site (phone, cash, a walk-in)
+// straight as a confirmed booking, bypassing the deposit/Stripe pipeline --
+// the day the visitor-facing calendar shows as bookable by default until
+// something actually occupies it. See createManualBooking() for the exact
+// rules (a block does not stop this; another booking or hold on the same day
+// does).
+app.post('/api/admin/bookings', auth, (req, res) => {
+  const result = bookingStore.createManualBooking({
+    date: req.body?.date,
+    location: req.body?.location,
+    name: req.body?.name,
+    email: req.body?.email,
+    phone: req.body?.phone,
+    notes: req.body?.notes
+  });
+  if (result.error) return res.status(result.status || 400).json({ error: result.error });
+  res.status(201).json(result);
+});
+
 app.get('/api/admin/booking/slots', auth, (req, res) => {
   bookingStore.releaseExpiredHolds();
   const blocks = bookingStore.readBlocks();
@@ -1582,51 +1585,7 @@ app.get('/api/admin/booking/slots', auth, (req, res) => {
           ? bookingStore.slotIsBlocked(slot, blocks, unblocks)
           : false
       }))
-      .sort((left, right) => (
-        String(left.date).localeCompare(String(right.date))
-        || String(left.startTime || '').localeCompare(String(right.startTime || ''))
-      ))
-  });
-});
-
-// Publishes open hours for one day, or -- when endDate is present -- for
-// every calendar day from date to endDate inclusive (the admin panel's
-// week/month range options).
-app.post('/api/admin/booking/slots', auth, (req, res) => {
-  const endDate = String(req.body?.endDate || '').trim();
-  const created = endDate
-    ? bookingStore.publishRange({
-      service: req.body?.service,
-      startDate: req.body?.date,
-      endDate,
-      openTime: req.body?.openTime,
-      closeTime: req.body?.closeTime,
-      sessionFee: req.body?.sessionFee,
-      sessionMinutes: req.body?.sessionMinutes,
-      gapMinutes: req.body?.gapMinutes,
-      location: req.body?.location,
-      unblockDays: Boolean(req.body?.unblockDay)
-    })
-    : bookingStore.publishDay({
-      service: req.body?.service,
-      date: req.body?.date,
-      openTime: req.body?.openTime,
-      closeTime: req.body?.closeTime,
-      sessionFee: req.body?.sessionFee,
-      sessionMinutes: req.body?.sessionMinutes,
-      gapMinutes: req.body?.gapMinutes,
-      location: req.body?.location,
-      unblockDay: Boolean(req.body?.unblockDay)
-    });
-  if (created.error) return res.status(400).json({ error: created.error });
-  res.status(201).json({
-    slots: created.slots,
-    created: created.created,
-    skipped: created.skipped,
-    unblockedDay: Boolean(created.unblockedDay),
-    daysPublished: created.daysPublished,
-    daysAttempted: created.daysAttempted,
-    daysSkippedPast: created.daysSkippedPast
+      .sort((left, right) => String(left.date).localeCompare(String(right.date)))
   });
 });
 
@@ -1636,9 +1595,9 @@ app.delete('/api/admin/booking/slots/:id', auth, (req, res) => {
   res.json({ ok: true });
 });
 
-// Recurring unavailability, e.g. Mon-Fri 09:00-17:00 for a day job. Reports how
-// many already-published sessions each block hides, so the effect of adding one
-// is visible without hunting through the calendar.
+// Recurring unavailability, e.g. Mon-Fri for a day job. Reports how many
+// already-open slots each block hides, so the effect of adding one is
+// visible without hunting through the calendar.
 app.get('/api/admin/booking/blocks', auth, (req, res) => {
   const blocks = bookingStore.readBlocks();
   const slots = bookingStore.readSlots().filter(slot => slot.status === bookingStore.SLOT.OPEN);
@@ -1654,8 +1613,6 @@ app.get('/api/admin/booking/blocks', auth, (req, res) => {
 app.post('/api/admin/booking/blocks', auth, (req, res) => {
   const created = bookingStore.createBlock({
     weekdays: req.body?.weekdays,
-    startTime: req.body?.startTime,
-    endTime: req.body?.endTime,
     reason: req.body?.reason
   });
   if (created.error) return res.status(400).json({ error: created.error });
@@ -1665,8 +1622,8 @@ app.post('/api/admin/booking/blocks', auth, (req, res) => {
   res.status(201).json({ block: created.block, hiddenSessions: hidden });
 });
 
-// One-off exceptions to the recurring blocks above: free a whole day or a
-// single session so it can be published and booked.
+// One-off exceptions to the recurring blocks above: free a whole day so it
+// can be published and booked.
 app.get('/api/admin/booking/unblocks', auth, (req, res) => {
   const unblocks = bookingStore.readUnblocks();
   res.json({
@@ -1677,9 +1634,9 @@ app.get('/api/admin/booking/unblocks', auth, (req, res) => {
   });
 });
 
-// A single date/session, or -- when endDate is present -- every day from
-// date to endDate inclusive that a block actually covers (the admin panel's
-// bulk unblock).
+// A single date, or -- when endDate is present -- every day from date to
+// endDate inclusive that a block actually covers (the admin panel's bulk
+// unblock).
 app.post('/api/admin/booking/unblocks', auth, (req, res) => {
   const endDate = String(req.body?.endDate || '').trim();
   if (endDate) {
@@ -1694,7 +1651,6 @@ app.post('/api/admin/booking/unblocks', auth, (req, res) => {
 
   const created = bookingStore.createUnblock({
     date: req.body?.date,
-    startTime: req.body?.startTime,
     reason: req.body?.reason
   });
   if (created.error) return res.status(created.status || 400).json({ error: created.error });
@@ -1713,7 +1669,7 @@ app.delete('/api/admin/booking/blocks/:id', auth, (req, res) => {
   res.json({ ok: true });
 });
 
-// Records the start time once studio and client have agreed it.
+// Records the agreed arrival/start time once the admin and client have settled it.
 app.patch('/api/admin/bookings/:id/time', auth, (req, res) => {
   const updated = bookingStore.setAgreedTime(String(req.params.id || ''), req.body?.agreedTime);
   if (!updated) return res.status(404).json({ error: 'Booking not found.' });

@@ -145,10 +145,9 @@ npm run manifest -- --local   # force the local-disk listing
   for it. `chromium-cli` is not installed either. The driver's hand-rolled CDP
   client exists for exactly this reason.
 - **There is no router.** `activeSection` is plain component state, so
-  `/church` or `/event-center` don't exist and you cannot deep-link — the
-  driver clicks nav links (`Home`/`About`/`Event Center`/`Church`) by text
-  content. A `--dump-dom` of `/` shows zero `<img>` — that's the hero, not a
-  failure.
+  `/event-center` doesn't exist and you cannot deep-link — the driver clicks
+  nav links (`Home`/`About`/`Event Center`) by text content. A `--dump-dom`
+  of `/` shows zero `<img>` — that's the hero, not a failure.
 - **The venue gallery lives under Event Center, not its own tab.**
   `<app-gallery>` renders inside the `activeSection === 'eventCenter'` block
   (see `app.component.html`), stacked above `<app-booking>`. There is no

@@ -1,12 +1,12 @@
 <header class="nav">
-  <a class="brand" (click)="goToSection('home')"><img src="assets/brand/logo-mark.svg" alt="" class="brand-mark">{{ content.site.brand }}</a>
+  <a class="brand" (click)="goToSection('home')"><img [src]="logoMark" alt="" class="brand-mark">{{ content.site.brand }}</a>
   <nav [class.open]="menuOpen">
     <a *ngIf="content.navigation.home.visible" [class.active]="activeSection === 'home'" (click)="goToSection('home')">{{ content.navigation.home.label }}</a>
     <a *ngIf="content.navigation.about.visible" [class.active]="activeSection === 'about'" (click)="goToSection('about')">{{ content.navigation.about.label }}</a>
     <a *ngIf="content.navigation.eventCenter.visible" [class.active]="activeSection === 'eventCenter'" (click)="goToSection('eventCenter')">{{ content.navigation.eventCenter.label }}</a>
-    <a *ngIf="content.navigation.church.visible" [class.active]="activeSection === 'church'" (click)="goToSection('church')">{{ content.navigation.church.label }}</a>
+    <a *ngIf="content.navigation.booking.visible" [class.active]="activeSection === 'booking'" (click)="goToSection('booking')">{{ content.navigation.booking.label }}</a>
   </nav>
-  <button class="admin-quick" type="button" (click)="adminOpen ? closeAdmin() : openAdmin()">{{ adminToken ? 'Manage products' : 'Admin login' }}</button>
+  <button class="admin-quick" type="button" (click)="adminOpen ? closeAdmin() : openAdmin()">{{ adminToken ? 'Manage site' : 'Admin login' }}</button>
   <button class="hamburger" (click)="menuOpen = !menuOpen">☰</button>
 </header>
 
@@ -18,38 +18,38 @@
          Angular creates the element and then sets attributes, so the property
          stays false, the browser treats the video as unmuted, and autoplay is
          refused with NotAllowedError. The attribute alone is not enough. -->
-    <div class="hero-image"><video [src]="heroVideo" [poster]="heroPoster" [muted]="true" autoplay loop playsinline disablepictureinpicture aria-label="Aerial drone footage: surf breaking over a rocky shoreline"></video><div class="hero-stamp">EST. 2014<br><b>✦</b><br>NEW YORK · BEYOND</div></div>
+    <div class="hero-image"><video [src]="heroVideo" [poster]="heroPoster" [muted]="true" autoplay loop playsinline disablepictureinpicture aria-label="Aerial drone footage of the Fairview Event Center building and grounds"></video><div class="hero-stamp">EST. 2014<br><b>✦</b><br>NEW YORK · BEYOND</div></div>
   </section>
 
   <section class="statement" *ngIf="activeSection === 'home'"><p class="eyebrow">{{ content.statement.eyebrow }}</p><h2>{{ content.statement.heading }}</h2><div class="statement-note">{{ content.statement.copy }}<span>↘</span></div></section>
 
-  <ng-container *ngIf="activeSection === 'eventCenter'">
-    <app-gallery
-      [visibleGallery]="visibleGallery"
-      [activeGallery]="activeGallery"
-      [activeMediaKind]="activeMediaKind"
-      [tourUrl]="activeTourUrl"
-      [galleryLoading]="galleryLoading"
-      [galleryPrefetching]="galleryPrefetching"
-      [galleryPrefetchCount]="galleryPrefetchCount"
-      (categoryChange)="changeGalleryCategory($event)"
-      (mediaKindChange)="changeGalleryMediaKind($event)"
-      (mediaClick)="openMedia($event)"
-      (mediaLoaded)="onMediaLoaded()"></app-gallery>
+  <app-gallery
+    *ngIf="activeSection === 'eventCenter'"
+    [visibleGallery]="visibleGallery"
+    [activeMediaKind]="activeMediaKind"
+    [tourUrl]="activeTourUrl"
+    [galleryLoading]="galleryLoading"
+    [galleryPrefetching]="galleryPrefetching"
+    [galleryPrefetchCount]="galleryPrefetchCount"
+    (mediaKindChange)="changeGalleryMediaKind($event)"
+    (mediaClick)="openMedia($event)"
+    (mediaLoaded)="onMediaLoaded()"></app-gallery>
 
-    <app-booking
-      [slots]="bookingSlots"
-      [loading]="bookingLoading"
-      [submitting]="bookingSubmitting"
-      [error]="bookingError"
-      [refundPolicy]="bookingPolicy"
-      [holdMinutes]="bookingHoldMinutes"
-      [serviceCatalog]="bookableServiceNames"
-      [requestSubmitting]="bookingRequestSubmitting"
-      (book)="onBookSlot($event)"
-      (requestDate)="onRequestDate($event)"
-      (enquire)="goToSection('contact')"></app-booking>
-  </ng-container>
+  <app-booking
+    *ngIf="activeSection === 'booking'"
+    [slots]="bookingSlots"
+    [bookedDates]="bookingBookedDates"
+    [closedWeekdays]="bookingClosedWeekdays"
+    [unblockedDates]="bookingUnblockedDates"
+    [loading]="bookingLoading"
+    [submitting]="bookingSubmitting"
+    [error]="bookingError"
+    [refundPolicy]="bookingPolicy"
+    [holdMinutes]="bookingHoldMinutes"
+    [requestSubmitting]="bookingRequestSubmitting"
+    (book)="onBookSlot($event)"
+    (requestDate)="onRequestDate($event)"
+    (enquire)="goToSection('contact')"></app-booking>
 
   <div class="media-viewer-backdrop" *ngIf="isMediaViewerOpen && selectedMedia" (click)="closeMediaViewer()">
     <div class="media-viewer" (click)="$event.stopPropagation()">
@@ -69,37 +69,7 @@
     </div>
   </div>
 
-  <app-about *ngIf="activeSection === 'about'" (contactClick)="goToSection('contact')"></app-about>
-
-  <section class="statement" *ngIf="activeSection === 'church'"><p class="eyebrow">{{ content.church.eyebrow }}</p><h2>{{ content.church.heading }}</h2><div class="statement-note">{{ content.church.body }}<span>↘</span></div></section>
-
-  <section class="gallery" *ngIf="activeSection === 'church'">
-    <div class="section-head">
-      <div>
-        <p class="eyebrow">SERVICES</p>
-        <h2>Photos and videos</h2>
-      </div>
-      <p class="service-lede">Moments from Greater Harvest Church, shared by the church office.</p>
-    </div>
-    <div class="gallery-grid" *ngIf="churchServiceMedia.length; else emptyChurchServiceGallery">
-      <article *ngFor="let item of churchServiceMedia; trackBy: trackByGalleryItem"
-               (click)="openMedia(item)"
-               role="button"
-               tabindex="0"
-               (keydown.enter)="openMedia(item)"
-               (keydown.space)="openMedia(item)">
-        <video *ngIf="item.mediaType === 'video'" [src]="item.image" muted playsinline preload="metadata" [attr.aria-label]="item.description || item.title"></video>
-        <img *ngIf="item.mediaType === 'image'" [src]="item.image" [alt]="item.description || item.title" loading="lazy" decoding="async">
-        <div>
-          <span>{{ item.category }} <b *ngIf="item.mediaType === 'video'">· Video</b></span>
-          <h3>{{ item.title }}</h3>
-        </div>
-      </article>
-    </div>
-    <ng-template #emptyChurchServiceGallery>
-      <p class="gallery-empty">Photos and videos from church services will appear here once the church office uploads them.</p>
-    </ng-template>
-  </section>
+  <app-about *ngIf="activeSection === 'about'" [content]="content.about" (contactClick)="goToSection('contact')"></app-about>
 
   <section id="contact" class="contact" *ngIf="activeSection === 'contact'"><p class="eyebrow">{{ content.contact.eyebrow }}</p><h2>{{ content.contact.heading }}</h2><a [href]="'mailto:' + content.contact.email" class="contact-link">{{ content.contact.email }} <span>↗</span></a></section>
 </main>
@@ -107,12 +77,12 @@
 <div class="admin-modal-backdrop" *ngIf="adminOpen" (click)="closeAdmin()">
   <aside class="admin-modal" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" aria-label="Admin studio">
     <div class="admin-modal-head">
-      <h3>{{ adminToken ? 'Manage products' : 'Admin login' }}</h3>
+      <h3>{{ adminToken ? 'Manage site' : 'Admin login' }}</h3>
       <button type="button" (click)="closeAdmin()" aria-label="Close admin panel">×</button>
     </div>
 
     <div *ngIf="!adminToken" class="login-card admin-login-card">
-      <p>Sign in to manage products and publish gallery items.</p>
+      <p>Sign in to manage the site and publish gallery items.</p>
       <div id="google-signin-button" style="margin: 20px 0 0; text-align: center;"></div>
       <p class="error" *ngIf="adminError">{{adminError}}</p>
     </div>
@@ -121,43 +91,156 @@
       <div class="admin-tabs" role="tablist" aria-label="Admin sections">
         <button type="button" [class.active]="adminView === 'content'" (click)="setAdminView('content')">Site content</button>
         <button type="button" [class.active]="adminView === 'venueGallery'" (click)="setAdminView('venueGallery')">Venue gallery</button>
-        <button type="button" [class.active]="adminView === 'products'" (click)="setAdminView('products')">Products</button>
         <button type="button" [class.active]="adminView === 'inquiries'" (click)="setAdminView('inquiries')">Inquiries <span>{{ inquiries.length }}</span></button>
         <button type="button" [class.active]="adminView === 'bookings'" (click)="setAdminView('bookings')">Bookings <span>{{ adminBookings.length }}</span></button>
-        <button type="button" [class.active]="adminView === 'churchServices'" (click)="setAdminView('churchServices')">Church services <span>{{ churchServiceMedia.length }}</span></button>
       </div>
 
-      <section class="admin-products" *ngIf="adminView === 'content'">
+      <section class="admin-site-content" *ngIf="adminView === 'content'">
         <form (ngSubmit)="saveSiteContent()">
-          <h4>Site identity</h4>
-          <label>Business name<input [(ngModel)]="content.site.brand" name="contentBrand" required></label>
-          <label>Site description<textarea [(ngModel)]="content.site.description" name="contentDescription" required></textarea></label>
-          <label>Contact email<input [(ngModel)]="content.contact.email" name="contentEmail" type="email" required></label>
-          <label>Contact heading<input [(ngModel)]="content.contact.heading" name="contentHeading" required></label>
-          <h4>Home hero</h4>
-          <label>Eyebrow<input [(ngModel)]="content.hero.eyebrow" name="contentHeroEyebrow" required></label>
-          <label>Headline<input [(ngModel)]="content.hero.headline" name="contentHeroHeadline" required></label>
-          <label>Intro<textarea [(ngModel)]="content.hero.intro" name="contentHeroIntro" required></textarea></label>
-          <h4>Church page</h4>
-          <label>Eyebrow<input [(ngModel)]="content.church.eyebrow" name="contentChurchEyebrow" required></label>
-          <label>Heading<input [(ngModel)]="content.church.heading" name="contentChurchHeading" required></label>
-          <label>Body<textarea [(ngModel)]="content.church.body" name="contentChurchBody" required></textarea></label>
-          <h4>Navigation</h4>
-          <label *ngFor="let item of navigationKeys">
-            <input type="checkbox" [(ngModel)]="content.navigation[item].visible" [name]="'visible-' + item">
-            Show {{ content.navigation[item].label }}
-          </label>
-          <button class="publish" type="submit" [disabled]="contentSaving">{{ contentSaving ? 'Saving…' : 'Save site content' }} <span>→</span></button>
-          <p class="error" *ngIf="adminError">{{ adminError }}</p>
+          <fieldset class="admin-card">
+            <legend>Site identity</legend>
+            <label>Business name<input [(ngModel)]="content.site.brand" name="contentBrand" required></label>
+            <label>Site description<textarea [(ngModel)]="content.site.description" name="contentDescription" required></textarea></label>
+            <label>Footer text<input [(ngModel)]="content.site.footerText" name="contentFooterText"></label>
+            <div class="media-field">
+              <label>Logo <span class="optional">shown in the header banner</span>
+                <input type="file" accept="image/*" (change)="uploadSiteLogo($event)" [disabled]="!!contentMediaUploading['siteLogo']">
+              </label>
+              <div class="media-current" *ngIf="content.site.logo">
+                <img [src]="mediaUrl(content.site.logo)" alt="">
+                <div class="media-current-info"><b>Custom logo set</b><span>Choose a file above to replace it</span></div>
+              </div>
+              <p class="admin-inquiries-meta" *ngIf="contentMediaUploading['siteLogo']">Uploading…</p>
+              <button type="button" class="underlined" *ngIf="content.site.logo" (click)="content.site.logo = ''">Reset to default logo</button>
+            </div>
+          </fieldset>
+
+          <fieldset class="admin-card">
+            <legend>Home hero</legend>
+            <label>Eyebrow<input [(ngModel)]="content.hero.eyebrow" name="contentHeroEyebrow" required></label>
+            <label>Headline<input [(ngModel)]="content.hero.headline" name="contentHeroHeadline" required></label>
+            <label>Intro<textarea [(ngModel)]="content.hero.intro" name="contentHeroIntro" required></textarea></label>
+            <div class="two-up">
+              <label>Button text<input [(ngModel)]="content.hero.ctaLabel" name="contentHeroCtaLabel" required></label>
+              <label>Button links to<select [(ngModel)]="content.hero.ctaTarget" name="contentHeroCtaTarget">
+                <option value="home">Home</option>
+                <option value="about">About</option>
+                <option value="eventCenter">Event Center</option>
+                <option value="booking">Booking</option>
+                <option value="contact">Contact</option>
+              </select></label>
+            </div>
+            <div class="media-field">
+              <label>Background video <span class="optional">MP4/H.264 recommended -- some formats (HEVC) won't play in Chrome/Firefox</span>
+                <input type="file" accept="video/*" (change)="uploadHeroVideo($event)" [disabled]="!!contentMediaUploading['heroVideo']">
+              </label>
+              <div class="media-current" *ngIf="content.hero.video">
+                <video [src]="mediaUrl(content.hero.video)" muted preload="metadata"></video>
+                <div class="media-current-info"><b>Custom video set</b><span>Choose a file above to replace it</span></div>
+              </div>
+              <p class="admin-inquiries-meta" *ngIf="contentMediaUploading['heroVideo']">Uploading…</p>
+              <button type="button" class="underlined" *ngIf="content.hero.video" (click)="content.hero.video = ''">Reset to default video</button>
+            </div>
+            <div class="media-field">
+              <label>Poster image <span class="optional">shown before the video loads</span>
+                <input type="file" accept="image/*" (change)="uploadHeroPoster($event)" [disabled]="!!contentMediaUploading['heroPoster']">
+              </label>
+              <div class="media-current" *ngIf="content.hero.poster">
+                <img [src]="mediaUrl(content.hero.poster)" alt="">
+                <div class="media-current-info"><b>Custom poster set</b><span>Choose a file above to replace it</span></div>
+              </div>
+              <p class="admin-inquiries-meta" *ngIf="contentMediaUploading['heroPoster']">Uploading…</p>
+              <button type="button" class="underlined" *ngIf="content.hero.poster" (click)="content.hero.poster = ''">Reset to default poster</button>
+            </div>
+          </fieldset>
+
+          <fieldset class="admin-card">
+            <legend>Home statement</legend>
+            <label>Eyebrow<input [(ngModel)]="content.statement.eyebrow" name="contentStatementEyebrow" required></label>
+            <label>Heading<input [(ngModel)]="content.statement.heading" name="contentStatementHeading" required></label>
+            <label>Copy<textarea [(ngModel)]="content.statement.copy" name="contentStatementCopy" required></textarea></label>
+          </fieldset>
+
+          <fieldset class="admin-card">
+            <legend>About page</legend>
+            <label>Eyebrow<input [(ngModel)]="content.about.eyebrow" name="contentAboutEyebrow" required></label>
+            <div class="two-up">
+              <label>Heading<input [(ngModel)]="content.about.heading" name="contentAboutHeading" required></label>
+              <label>Heading emphasis <span class="optional">italic, after the heading</span><input [(ngModel)]="content.about.headingEmphasis" name="contentAboutHeadingEmphasis" required></label>
+            </div>
+            <label>Body <span class="optional">separate paragraphs with a blank line</span><textarea [(ngModel)]="content.about.body" name="contentAboutBody" required></textarea></label>
+            <label>Button text<input [(ngModel)]="content.about.ctaLabel" name="contentAboutCtaLabel" required></label>
+            <div class="media-field">
+              <label>Portrait photo
+                <input type="file" accept="image/*" (change)="uploadAboutPortrait($event)" [disabled]="!!contentMediaUploading['aboutPortrait']">
+              </label>
+              <div class="media-current" *ngIf="content.about.portraitImage">
+                <img [src]="mediaUrl(content.about.portraitImage)" alt="">
+                <div class="media-current-info"><b>Custom portrait set</b><span>Choose a file above to replace it</span></div>
+              </div>
+              <p class="admin-inquiries-meta" *ngIf="contentMediaUploading['aboutPortrait']">Uploading…</p>
+              <button type="button" class="underlined" *ngIf="content.about.portraitImage" (click)="content.about.portraitImage = ''">Reset to default portrait</button>
+            </div>
+          </fieldset>
+
+          <fieldset class="admin-card">
+            <legend>About page features</legend>
+            <p class="admin-card-hint">Shown below the About copy, each with its own image.</p>
+            <div class="about-feature-editor" *ngFor="let feature of content.about.features || []; let i = index">
+              <div class="about-feature-editor-head">
+                <b>Feature {{ i + 1 }}</b>
+                <button type="button" class="underlined" (click)="removeAboutFeature(i)">Remove feature</button>
+              </div>
+              <label>Title<input [(ngModel)]="feature.title" [name]="'featureTitle' + i" placeholder="e.g. Full-service kitchen" required></label>
+              <label>Description<textarea [(ngModel)]="feature.description" [name]="'featureDescription' + i" placeholder="A short line about this feature" required></textarea></label>
+              <div class="media-field">
+                <label>Image
+                  <input type="file" accept="image/*" (change)="uploadAboutFeatureImage($event, i)" [disabled]="!!contentMediaUploading['aboutFeature-' + i]">
+                </label>
+                <div class="media-current" *ngIf="feature.image">
+                  <img [src]="mediaUrl(feature.image)" alt="">
+                  <div class="media-current-info"><b>Image set</b><span>Choose a file above to replace it</span></div>
+                </div>
+                <p class="admin-inquiries-meta" *ngIf="contentMediaUploading['aboutFeature-' + i]">Uploading…</p>
+                <button type="button" class="underlined" *ngIf="feature.image" (click)="feature.image = ''">Remove image</button>
+              </div>
+            </div>
+            <button type="button" class="underlined" (click)="addAboutFeature()">Add feature +</button>
+          </fieldset>
+
+          <fieldset class="admin-card">
+            <legend>Contact</legend>
+            <label>Eyebrow<input [(ngModel)]="content.contact.eyebrow" name="contentContactEyebrow" required></label>
+            <label>Contact heading<input [(ngModel)]="content.contact.heading" name="contentHeading" required></label>
+            <label>Contact email<input [(ngModel)]="content.contact.email" name="contentEmail" type="email" required></label>
+          </fieldset>
+
+          <fieldset class="admin-card">
+            <legend>Appearance</legend>
+            <div class="two-up theme-colors">
+              <label>Primary color <span class="optional">buttons, active states</span><input type="color" [(ngModel)]="content.theme.primary" name="themePrimary"></label>
+              <label>Background color<input type="color" [(ngModel)]="content.theme.background" name="themeBackground"></label>
+            </div>
+            <label>Text color<input type="color" [(ngModel)]="content.theme.text" name="themeText"></label>
+            <button type="button" class="underlined" (click)="resetTheme()">Reset to original colors</button>
+          </fieldset>
+
+          <fieldset class="admin-card">
+            <legend>Navigation</legend>
+            <label class="checkbox-label" *ngFor="let item of navigationKeys">
+              <input type="checkbox" [(ngModel)]="content.navigation[item].visible" [name]="'visible-' + item">
+              Show {{ content.navigation[item].label }}
+            </label>
+          </fieldset>
+
+          <div class="admin-form-footer">
+            <button class="publish" type="submit" [disabled]="contentSaving">{{ contentSaving ? 'Saving…' : 'Save site content' }} <span>→</span></button>
+            <p class="error" *ngIf="adminError">{{ adminError }}</p>
+          </div>
         </form>
       </section>
 
       <section class="admin-products" *ngIf="adminView === 'venueGallery'">
-        <div class="admin-tabs" role="tablist" aria-label="Venue gallery category">
-          <button type="button" [class.active]="venueGalleryCategory === 'Community Center'" (click)="setVenueGalleryCategory('Community Center')">Community Center</button>
-          <button type="button" [class.active]="venueGalleryCategory === 'Church'" (click)="setVenueGalleryCategory('Church')">Church</button>
-        </div>
-
         <label class="dropzone">
           <input type="file" accept="image/*,video/*" (change)="pickVenueGalleryMedia($event)">
           <div *ngIf="!venueGalleryUploadPreview"><b>Drop an image or video here</b><span>JPG, PNG, MP4, MOV</span></div>
@@ -166,7 +249,7 @@
         </label>
         <form (ngSubmit)="uploadVenueGalleryMedia()">
           <label>Title<input [(ngModel)]="venueGalleryTitle" name="venueGalleryTitle" placeholder="e.g. Main hall" required></label>
-          <button class="publish" type="submit" [disabled]="!venueGalleryUploadFile || venueGalleryUploading">{{ venueGalleryUploading ? 'Uploading…' : 'Add to ' + venueGalleryCategory }} <span>→</span></button>
+          <button class="publish" type="submit" [disabled]="!venueGalleryUploadFile || venueGalleryUploading">{{ venueGalleryUploading ? 'Uploading…' : 'Add to gallery' }} <span>→</span></button>
           <p class="error" *ngIf="venueGalleryError">{{ venueGalleryError }}</p>
         </form>
         <div class="admin-note" *ngIf="venueGalleryCategoryMedia.length">
@@ -178,49 +261,11 @@
         </div>
 
         <h4>Virtual tour</h4>
-        <label>{{ venueGalleryCategory }} embed URL (Matterport, YouTube, etc.)
+        <label>Embed URL (Matterport, YouTube, etc.)
           <input [(ngModel)]="venueGalleryTourUrl" name="venueGalleryTourUrl" type="url" placeholder="https://my.matterport.com/show/?m=...">
         </label>
         <button type="button" class="underlined" [disabled]="venueGalleryTourSaving" (click)="saveVenueGalleryTour()">{{ venueGalleryTourSaving ? 'Saving…' : 'Save tour link' }}</button>
         <button type="button" class="underlined signout" (click)="logout()">Sign out</button>
-      </section>
-
-      <section class="admin-products" *ngIf="adminView === 'products'">
-        <label class="dropzone">
-          <input type="file" accept="image/*,video/*" (change)="pickMedia($event)">
-          <div *ngIf="!uploadPreview"><b>Drop an image or video here</b><span>JPG, PNG, MP4, MOV</span></div>
-          <img *ngIf="uploadPreview && uploadFile?.type?.startsWith('image')" [src]="uploadPreview" alt="Upload preview">
-          <video *ngIf="uploadPreview && uploadFile?.type?.startsWith('video')" [src]="uploadPreview" muted controls></video>
-        </label>
-        <form (ngSubmit)="publishProduct()">
-          <label>Title<input [(ngModel)]="product.title" name="title" placeholder="e.g. Driftwood Coast" required></label>
-          <div class="two-up"><label>Product type<select [(ngModel)]="product.category" name="category"><option>Print</option><option>Digital download</option><option>Stock video</option><option>Fine art</option></select></label><label>Price (USD)<input [(ngModel)]="product.price" name="price" type="number" min="1" required></label></div>
-          <label>Description <textarea [(ngModel)]="product.description" name="description" placeholder="A few details about this piece..."></textarea></label>
-          <button class="publish" type="submit" [disabled]="!uploadFile || uploading">{{ uploading ? 'Publishing…' : 'Publish to shop' }} <span>→</span></button>
-          <button type="button" class="underlined signout" (click)="logout()">Sign out</button>
-          <p class="error" *ngIf="adminError">{{adminError}}</p>
-        </form>
-      </section>
-
-      <section class="admin-products" *ngIf="adminView === 'churchServices'">
-        <label class="dropzone">
-          <input type="file" accept="image/*,video/*" (change)="pickChurchServiceMedia($event)">
-          <div *ngIf="!churchServiceUploadPreview"><b>Drop an image or video here</b><span>JPG, PNG, MP4, MOV</span></div>
-          <img *ngIf="churchServiceUploadPreview && churchServiceUploadFile?.type?.startsWith('image')" [src]="churchServiceUploadPreview" alt="Upload preview">
-          <video *ngIf="churchServiceUploadPreview && churchServiceUploadFile?.type?.startsWith('video')" [src]="churchServiceUploadPreview" muted controls></video>
-        </label>
-        <form (ngSubmit)="uploadChurchServiceMedia()">
-          <label>Title<input [(ngModel)]="churchServiceTitle" name="churchServiceTitle" placeholder="e.g. Sunday worship" required></label>
-          <button class="publish" type="submit" [disabled]="!churchServiceUploadFile || churchServiceUploading">{{ churchServiceUploading ? 'Uploading…' : 'Add to Church page' }} <span>→</span></button>
-          <p class="error" *ngIf="churchServiceError">{{ churchServiceError }}</p>
-        </form>
-        <div class="admin-note" *ngIf="churchServiceMedia.length">
-          <h4>Published</h4>
-          <div class="two-up" *ngFor="let item of churchServiceMedia; trackBy: trackByGalleryItem">
-            <span>{{ item.title }}</span>
-            <button type="button" class="underlined" (click)="deleteChurchServiceMedia(item)">Delete</button>
-          </div>
-        </div>
       </section>
 
       <section class="admin-inquiries" *ngIf="adminView === 'inquiries'">
@@ -254,27 +299,27 @@
       </section>
 
       <section class="admin-inquiries" *ngIf="adminView === 'bookings'">
+        <p class="admin-inquiries-meta">Record a manual booking (phone, cash, walk-in)</p>
         <div class="admin-inquiries-tools admin-booking-tools">
-          <label>Service<input type="text" [(ngModel)]="newSlot.service" name="slotService" placeholder="Aerial"></label>
-          <label>Date<input type="date" [(ngModel)]="newSlot.date" name="slotDate"></label>
-          <label>Range<select [(ngModel)]="newSlot.range" name="slotRange">
-            <option *ngFor="let option of publishRangeOptions" [value]="option.value">{{ option.label }}</option>
-          </select></label>
-          <label>Opens<input type="time" [(ngModel)]="newSlot.openTime" name="slotOpen"></label>
-          <label>Closes<input type="time" [(ngModel)]="newSlot.closeTime" name="slotClose"></label>
-          <label>Session minutes<input type="number" min="15" max="1440" [(ngModel)]="newSlot.sessionMinutes" name="slotDuration"></label>
-          <label>Gap minutes<input type="number" min="0" max="1440" [(ngModel)]="newSlot.gapMinutes" name="slotGap"></label>
-          <label>Session fee ($)<input type="number" min="1" [(ngModel)]="newSlot.sessionFee" name="slotFee"></label>
-          <label>Location<input type="text" [(ngModel)]="newSlot.location" name="slotLocation" placeholder="Optional"></label>
-          <label class="admin-unblock-day"><input type="checkbox" [(ngModel)]="newSlot.unblockDay" name="slotUnblockDay"> Unblock {{ newSlot.range === 'day' ? 'this day' : 'these days' }} (ignore blocked hours)</label>
-          <button type="button" class="underlined" (click)="createSlot()">Publish {{ newSlot.range === 'day' ? 'day' : newSlot.range }} +</button>
+          <label>Date<input type="date" [(ngModel)]="newManualBooking.date" name="manualDate"></label>
+          <label>Location <span class="optional">optional</span><input type="text" [(ngModel)]="newManualBooking.location" name="manualLocation" placeholder="Optional"></label>
+          <label>Customer name<input type="text" [(ngModel)]="newManualBooking.name" name="manualName"></label>
+          <label>Email <span class="optional">optional</span><input type="email" [(ngModel)]="newManualBooking.email" name="manualEmail"></label>
+          <label>Phone <span class="optional">optional</span><input type="tel" [(ngModel)]="newManualBooking.phone" name="manualPhone"></label>
+          <button type="button" class="underlined" [disabled]="manualBookingSubmitting" (click)="createManualBooking()">{{ manualBookingSubmitting ? 'Recording…' : 'Record booking +' }}</button>
           <button type="button" class="underlined" (click)="setAdminView('bookings')">Refresh <span>&#8635;</span></button>
         </div>
+        <p class="admin-block-hint">
+          Takes the day immediately as a confirmed booking at the standard $1,200 event space rate -- no deposit
+          is collected through the site, so use this only for a reservation already agreed by phone, cash, or in
+          person. A block does not stop this. Days are bookable online by default; use Block below to close a day off.
+        </p>
+
         <p class="error" *ngIf="adminBookingError">{{ adminBookingError }}</p>
         <p class="admin-inquiries-meta" *ngIf="adminBookingNotice">{{ adminBookingNotice }}</p>
         <p class="admin-inquiries-meta" *ngIf="adminBookingLoading">Loading bookings...</p>
 
-        <p class="admin-inquiries-meta" *ngIf="!adminBookingLoading">Blocked hours ({{ adminBlocks.length }})</p>
+        <p class="admin-inquiries-meta" *ngIf="!adminBookingLoading">Blocked weekdays ({{ adminBlocks.length }})</p>
         <div class="admin-blocks" *ngIf="!adminBookingLoading">
           <div class="admin-block-form">
             <div class="weekday-toggles">
@@ -285,14 +330,11 @@
                 [class.on]="newBlock.weekdays.includes(day.value)"
                 (click)="toggleBlockWeekday(day.value)">{{ day.label }}</button>
             </div>
-            <label>From<input type="time" [(ngModel)]="newBlock.startTime" name="blockStart"></label>
-            <label>To<input type="time" [(ngModel)]="newBlock.endTime" name="blockEnd"></label>
             <label>Reason<input type="text" [(ngModel)]="newBlock.reason" name="blockReason" placeholder="Day job"></label>
-            <button type="button" class="underlined" (click)="createBlock()">Block hours +</button>
+            <button type="button" class="underlined" (click)="createBlock()">Block weekdays +</button>
           </div>
           <p class="admin-block-hint">
-            Blocked hours never appear as bookable times, on days already published or published later.
-            Sessions someone has already paid for are never hidden.
+            Blocked weekdays never appear as bookable days. A day someone has already booked is never hidden.
           </p>
           <ul class="admin-block-list" *ngIf="adminBlocks.length">
             <li *ngFor="let block of adminBlocks">
@@ -309,17 +351,13 @@
           <div class="admin-block-form admin-unblock-form">
             <label>Date<input type="date" [(ngModel)]="newUnblock.date" name="unblockDate"></label>
             <label>To (optional, for a range)<input type="date" [(ngModel)]="newUnblock.endDate" name="unblockEndDate"></label>
-            <label>Start time (optional)<input type="time" [(ngModel)]="newUnblock.startTime" name="unblockStart" [disabled]="!!newUnblock.endDate"></label>
             <label>Reason<input type="text" [(ngModel)]="newUnblock.reason" name="unblockReason" placeholder="One-off opening"></label>
             <button type="button" class="underlined" (click)="createUnblock()">{{ newUnblock.endDate ? 'Unblock range +' : 'Unblock +' }}</button>
           </div>
           <p class="admin-block-hint">
-            Days are open by default -- an unblock is only needed when a block above covers the day.
-            Leave the start time empty to free a whole day; set it to free just that session. Set "To" to
-            unblock every day in that range that's actually blocked -- days already open are skipped, so
-            you don't need to know in advance which ones need it (start time is ignored in this mode).
-            If nothing was ever published for a freed day, the notice below tells you and fills in the
-            Publish form -- an unblock alone does not create sessions.
+            Days are open by default -- an unblock is only needed when a block above covers the day, and it makes
+            the day immediately bookable again. Set "To" to unblock every day in that range that's actually
+            blocked -- days already open are skipped, so you don't need to know in advance which ones need it.
           </p>
           <ul class="admin-block-list" *ngIf="adminUnblocks.length">
             <li *ngFor="let rule of adminUnblocks">
@@ -330,21 +368,20 @@
           </ul>
         </div>
 
-        <p class="admin-inquiries-meta" *ngIf="!adminBookingLoading">Published sessions ({{ adminSlots.length }})</p>
+        <p class="admin-inquiries-meta" *ngIf="!adminBookingLoading">Booking activity ({{ adminSlots.length }})</p>
         <div class="admin-inquiries-list" *ngIf="!adminBookingLoading && adminSlots.length">
           <article class="inquiry-card" *ngFor="let slot of adminSlots">
             <div class="inquiry-card-head">
-              <h4>{{ slot.date }}<span *ngIf="slot.startTime"> at {{ slot.startTime }}</span> &middot; {{ slot.service }}</h4>
+              <h4>{{ slot.date }}</h4>
               <p>{{ slot.status }}<span *ngIf="slot.blocked"> &middot; blocked</span></p>
             </div>
             <p class="inquiry-card-contact">
-              {{ formatMoney(slot.sessionFee) }} session &middot; {{ formatMoney(slot.sessionFee / 4) }} deposit
-              <span *ngIf="slot.approxDurationMinutes"> &middot; {{ slot.approxDurationMinutes }} min</span>
+              {{ formatMoney(slot.sessionFee) }} &middot; {{ formatMoney(slot.sessionFee / 4) }} deposit
               <span *ngIf="slot.location"> &middot; {{ slot.location }}</span>
             </p>
             <div class="inquiry-card-foot">
               <button type="button" class="underlined" (click)="unblockSlot(slot)" *ngIf="slot.blocked && slot.status === 'open'">Unblock</button>
-              <button type="button" class="underlined" (click)="removeSlot(slot)" *ngIf="slot.status !== 'booked'">Remove session</button>
+              <button type="button" class="underlined" (click)="removeSlot(slot)" *ngIf="slot.status === 'open'">Remove day</button>
               <span class="inquiry-delivery" *ngIf="slot.status === 'booked'">Booked</span>
             </div>
           </article>
@@ -354,16 +391,16 @@
         <div class="admin-inquiries-list" *ngIf="!adminBookingLoading && adminBookings.length">
           <article class="inquiry-card" *ngFor="let booking of adminBookings">
             <div class="inquiry-card-head">
-              <h4>{{ booking.name }} &middot; {{ booking.date }}<span *ngIf="booking.startTime"> at {{ booking.startTime }}</span></h4>
+              <h4>{{ booking.name }} &middot; {{ booking.date }}</h4>
               <p>{{ booking.status }}</p>
             </div>
             <p class="inquiry-card-contact">
               <a [href]="'mailto:' + booking.email">{{ booking.email }}</a>
-              <span *ngIf="booking.phone"> &middot; {{ booking.phone }}</span> &middot; {{ booking.service }}
+              <span *ngIf="booking.phone"> &middot; {{ booking.phone }}</span>
             </p>
             <p class="inquiry-card-message">
               Deposit {{ formatMoney(booking.deposit) }} paid &middot; balance {{ formatMoney(booking.balanceDue) }} due.
-              <span *ngIf="booking.agreedTime">Moved to {{ booking.agreedTime }}.</span>
+              <span *ngIf="booking.agreedTime">Agreed time: {{ booking.agreedTime }}.</span>
               <span *ngIf="booking.notes"> {{ booking.notes }}</span>
             </p>
             <div class="inquiry-card-foot" *ngIf="booking.status === 'confirmed'">

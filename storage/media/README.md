@@ -10,18 +10,12 @@ and upload from; a machine that only needs to *run* the site needs none of them.
 ```
 storage/media/
   community-center/   -> displayed as "Community Center" (venue gallery)
-  church/              -> displayed as "Church" (venue gallery)
-  church-services/    -> displayed as "Church services" (separate Church page gallery)
   gallery-manifest.json   (generated, do not edit)
 ```
 
-`community-center` and `church` are the two categories in the venue ("See the space")
-gallery's tabs. `church-services` is unrelated: it feeds the separate ministry gallery
-on the Church nav page (moments from services, not photos of the room itself).
-
-The venue gallery also has a "Virtual Tour" control per category. That is not a file
-in these folders -- it is an embed link (Matterport, YouTube, etc.) set from the
-admin panel and stored in site content, not the media library.
+The venue gallery also has a "Virtual Tour" control. That is not a file in this
+folder -- it is an embed link (Matterport, YouTube, etc.) set from the admin
+panel and stored in site content, not the media library.
 
 Every supported image or video in those folders is displayed automatically.
 Supported formats are `.jpg`, `.jpeg`, `.png`, `.webp`, `.avif`, and `.mp4`.

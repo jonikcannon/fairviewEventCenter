@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 130" width="560" height="130" role="img" aria-label="Greater Harvest Church, Fairview Community Center">
-  <title>Greater Harvest Church / Fairview Community Center</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 130" width="560" height="130" role="img" aria-label="Fairview Community Center">
+  <title>Fairview Community Center</title>
   <g transform="translate(4 5)">
   <g>
     <circle cx="60" cy="60" r="55" fill="none" stroke="#26362e" stroke-width="2.5"/>
@@ -28,7 +28,5 @@
     <rect x="42" y="36" width="36" height="8" fill="#26362e"/>
   </g>
   </g>
-  <text x="146" y="60" font-family="Georgia, 'Times New Roman', serif" font-size="34" fill="#1f211d">Greater Harvest Church</text>
-  <line x1="146" y1="76" x2="520" y2="76" stroke="#cfc9bc" stroke-width="1"/>
-  <text x="146" y="99" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" letter-spacing="3.4" fill="#26362e">FAIRVIEW COMMUNITY CENTER</text>
+  <text x="146" y="72" font-family="Georgia, 'Times New Roman', serif" font-size="27" fill="#1f211d">Fairview Community Center</text>
 </svg>

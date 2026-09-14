@@ -34,15 +34,19 @@ type Inquiry = {
   styleUrl: './app.component.css'
 })
 export class AppComponent implements OnInit {
+  // Bound for the admin Site content form, which shows a thumbnail of
+  // whatever media is already saved in each slot (see the media-current
+  // blocks in app.component.html) so the admin can tell at a glance that a
+  // field already has a value before overwriting it.
+  readonly mediaUrl = mediaUrl;
   content: SiteContent = defaultSiteContent;
   // Typed (rather than a plain string[]) so the admin nav-visibility *ngFor
   // narrows `item` enough for `content.navigation[item]` to type-check.
-  readonly navigationKeys: (keyof SiteContent['navigation'])[] = ['home', 'about', 'eventCenter', 'church'];
-  private readonly categoryOrder = ['Community Center', 'Church'];
+  readonly navigationKeys: (keyof SiteContent['navigation'])[] = ['home', 'about', 'eventCenter', 'booking'];
+  private readonly categoryOrder = ['Community Center'];
   menuOpen = false;
   showAll = false;
   activeService = 'Aerial';
-  activeGallery = 'Community Center';
   activeMediaKind: GalleryMediaKind = 'photos';
   // Hard-coded in the template rather than manifest-driven, so it needs the
   // same bucket resolution the manifest entries already carry.
@@ -57,34 +61,39 @@ export class AppComponent implements OnInit {
   // media but is skipped by the manifest: buildManifest() only walks the
   // folders in CATEGORIES, so the hero never becomes a gallery item or a
   // product.
-  readonly heroVideo = mediaUrl('assets/gallery/hero/hero-surf-rocky-shoreline.mp4');
+  private readonly defaultHeroVideo = mediaUrl('assets/gallery/hero/hero-fairview-event-center.mp4');
   // Bundled rather than put in the bucket: watermark-media.js stamps every
   // image under assets/gallery/ regardless of folder, and a watermarked poster
   // flashing before an unwatermarked video looks like a bug.
-  readonly heroPoster = 'assets/hero-poster.jpg';
+  private readonly defaultHeroPoster = 'assets/hero-poster.jpg';
+  // content.hero.video/poster are empty until an admin uploads a replacement
+  // through the Site content form; until then this is the exact bundled
+  // default above (same H.264 re-encode note applies to whatever an admin
+  // uploads too -- Chrome/Firefox cannot decode HEVC in <video> at all).
+  get heroVideo(): string {
+    return this.content.hero.video ? mediaUrl(this.content.hero.video) : this.defaultHeroVideo;
+  }
+  get heroPoster(): string {
+    return this.content.hero.poster ? mediaUrl(this.content.hero.poster) : this.defaultHeroPoster;
+  }
+  // Bundled crest used in the header and footer until an admin uploads a
+  // real logo through the Site content form.
+  private readonly defaultLogo = 'assets/brand/logo-mark.svg';
+  get logoMark(): string {
+    return this.content.site.logo ? mediaUrl(this.content.site.logo) : this.defaultLogo;
+  }
   // Not a narrow union: content.hero.ctaTarget is admin-editable free text
   // that flows straight into this field (see goToSection()).
   activeSection = 'home';
   adminOpen = false;
-  adminView: 'content' | 'products' | 'inquiries' | 'bookings' | 'churchServices' | 'venueGallery' = 'content';
+  adminView: 'content' | 'inquiries' | 'bookings' | 'venueGallery' = 'content';
   private changeDetector: ChangeDetectorRef;
   private ngZone: NgZone;
   constructor(changeDetector: ChangeDetectorRef, ngZone: NgZone) {
     this.changeDetector = changeDetector;
     this.ngZone = ngZone;
   }
-  uploadPreview = '';
-  uploadFile?: File;
-  product = { title: '', category: 'Print', price: 95, description: '' };
-  churchServiceTitle = '';
-  churchServiceUploadFile?: File;
-  churchServiceUploadPreview = '';
-  churchServiceUploading = false;
-  churchServiceError = '';
-  // Admin uploads for the venue gallery's two categories (Community Center /
-  // Church). Kept in one bucket of state, switched by venueGalleryCategory,
-  // rather than duplicated per category.
-  venueGalleryCategory: 'Community Center' | 'Church' = 'Community Center';
+  // Admin uploads for the venue gallery's Community Center category.
   venueGalleryTitle = '';
   venueGalleryUploadFile?: File;
   venueGalleryUploadPreview = '';
@@ -97,13 +106,13 @@ export class AppComponent implements OnInit {
   adminAuthProvider = sessionStorage.getItem('fairview_admin_provider') || '';
   adminError = '';
   contentSaving = false;
+  contentMediaUploading: Record<string, boolean> = {};
   inquiries: Inquiry[] = [];
   inquiriesLoading = false;
   inquiriesError = '';
   inquirySearch = '';
   inquiryServiceFilter = 'all';
   inquiryStatusFilter: 'all' | 'new' | 'in-progress' | 'closed' = 'all';
-  uploading = false;
   productsLoading = false;
   cartCheckingOut = false;
   cartFormError = '';
@@ -270,48 +279,41 @@ export class AppComponent implements OnInit {
 
   // --- booking ---
   bookingSlots: BookingSlot[] = [];
+  bookingBookedDates: string[] = [];
+  bookingClosedWeekdays: number[] = [];
+  bookingUnblockedDates: string[] = [];
   bookingLoading = false;
   bookingSubmitting = false;
   bookingError = '';
   bookingPolicy = '';
   bookingHoldMinutes = 15;
   bookingRequestSubmitting = false;
-  // Kept in sync BY HAND with SERVICE_STARTING_PRICES in fairviewApi/booking.js.
-  // Digital prints is a mail-order product with no date/session, so it is not
-  // offered when requesting a day to reserve with a deposit.
-  readonly bookableServiceNames = ['Spaces', 'Aerial', 'Portraits'];
   adminBookings: any[] = [];
   adminSlots: any[] = [];
   adminBookingError = '';
   adminBookingLoading = false;
-  newSlot = {
-    service: 'Aerial',
-    date: '',
-    range: 'day' as 'day' | 'week' | 'month',
-    openTime: '09:00',
-    closeTime: '17:00',
-    sessionFee: 800,
-    sessionMinutes: 120,
-    gapMinutes: 30,
-    location: '',
-    unblockDay: false
-  };
-  readonly publishRangeOptions: Array<{ value: 'day' | 'week' | 'month'; label: string }> = [
-    { value: 'day', label: 'Day' },
-    { value: 'week', label: 'Week' },
-    { value: 'month', label: 'Month' }
-  ];
   adminBookingNotice = '';
+  // A reservation taken outside the site (phone, cash, a walk-in): recorded
+  // straight as a confirmed booking, no deposit/Stripe involved, so the day
+  // stops showing as bookable online. There's only one thing to book -- the
+  // event space, flat rate -- so there is no service or fee to fill in.
+  manualBookingSubmitting = false;
+  newManualBooking = {
+    date: '',
+    location: '',
+    name: '',
+    email: '',
+    phone: '',
+    notes: ''
+  };
   adminBlocks: any[] = [];
   adminUnblocks: any[] = [];
-  // A one-off exception to a recurring block: free a whole day (empty time) or a
-  // single session so it can be published and booked. endDate, when set, turns
-  // this into a bulk unblock across every day in [date, endDate] -- startTime
-  // is ignored in that mode since a range unblocks whole days, not one
-  // recurring time across many of them.
-  newUnblock = { date: '', endDate: '', startTime: '', reason: '' };
-  // Mon-Fri is the case this exists for: a day job that rules out weekday hours.
-  newBlock = { weekdays: [1, 2, 3, 4, 5], startTime: '09:00', endTime: '17:00', reason: '' };
+  // A one-off exception to a recurring weekday block: frees a whole day so it
+  // can be published and booked. endDate, when set, turns this into a bulk
+  // unblock across every day in [date, endDate].
+  newUnblock = { date: '', endDate: '', reason: '' };
+  // Mon-Fri is the case this exists for: a day job that rules out weekdays.
+  newBlock = { weekdays: [1, 2, 3, 4, 5], reason: '' };
   readonly weekdayOptions = [
     { value: 1, label: 'Mon' }, { value: 2, label: 'Tue' }, { value: 3, label: 'Wed' },
     { value: 4, label: 'Thu' }, { value: 5, label: 'Fri' }, { value: 6, label: 'Sat' },
@@ -321,17 +323,12 @@ export class AppComponent implements OnInit {
   gallery: GalleryItem[] = [];
   get visibleWork() { return this.showAll ? this.work : this.work.slice(0, 4); }
   get visibleGallery() { return this.getVisibleGalleryItems(); }
-  get churchServiceMedia() { return this.gallery.filter(item => item.category === 'Church services'); }
-  get venueGalleryCategoryMedia() { return this.gallery.filter(item => item.category === this.venueGalleryCategory); }
+  get venueGalleryCategoryMedia() { return this.gallery.filter(item => item.category === 'Community Center'); }
   get venueGalleryTourUrl(): string {
-    return this.venueGalleryCategory === 'Church' ? this.content.tours.church : this.content.tours.communityCenter;
+    return this.content.tours.communityCenter;
   }
   set venueGalleryTourUrl(value: string) {
-    if (this.venueGalleryCategory === 'Church') this.content.tours.church = value;
-    else this.content.tours.communityCenter = value;
-  }
-  private venueGalleryFolder(category: 'Community Center' | 'Church'): string {
-    return category === 'Church' ? 'church' : 'community-center';
+    this.content.tours.communityCenter = value;
   }
   get visibleCatalogCategories() {
     return this.catalogCategories;
@@ -348,26 +345,6 @@ export class AppComponent implements OnInit {
   }
   get editableCategoryOptions() {
     return this.catalogCategories.filter(category => category !== 'All');
-  }
-  private visibleProductsSource: Product[] | null = null;
-  private visibleProductsCategory = '';
-  private visibleProductsCache: Product[] = [];
-  // Memoised on the catalogue array and the active category, both of which only
-  // change in rebuildProducts()/changeGalleryCategory(). Two reasons this cannot
-  // rebuild per change-detection pass: the filter is O(products x gallery) via
-  // getGalleryCategoryByProductImage, and a fresh array reference would reset the
-  // paging in the OnPush products component on every unrelated re-render.
-  get visibleProducts(): Product[] {
-    if (this.visibleProductsSource === this.products && this.visibleProductsCategory === this.activeGallery) {
-      return this.visibleProductsCache;
-    }
-    this.visibleProductsSource = this.products;
-    this.visibleProductsCategory = this.activeGallery;
-    this.visibleProductsCache = this.products.filter(product => {
-      if (this.activeGallery === 'All') return true;
-      return this.getGalleryCategoryByProductImage(product.image) === this.activeGallery;
-    });
-    return this.visibleProductsCache;
   }
   get canManageProducts() { return !!this.adminToken; }
   get cartCount() { return this.cart.reduce((total, item) => total + item.quantity, 0); }
@@ -431,10 +408,22 @@ export class AppComponent implements OnInit {
       if (!response.ok) return;
       const incoming = await response.json();
       this.content = { ...defaultSiteContent, ...incoming };
+      this.applyTheme();
       this.changeDetector.detectChanges();
     } catch {
       // The tracked defaults keep the public shell usable while the API is unavailable.
     }
+  }
+  // Pushes the saved palette into the CSS custom properties every live
+  // stylesheet was refactored to read (see src/styles.css). Setting them on
+  // the root element overrides the :root defaults for every component,
+  // instantly and with no rebuild -- an untouched theme is a no-op because
+  // these values already match the CSS file's own defaults.
+  private applyTheme() {
+    const root = document.documentElement.style;
+    root.setProperty('--color-primary', this.content.theme.primary);
+    root.setProperty('--color-background', this.content.theme.background);
+    root.setProperty('--color-text', this.content.theme.text);
   }
   private loadStoredDeliveryPreferences() {
     try {
@@ -538,10 +527,10 @@ export class AppComponent implements OnInit {
   private getVisibleGalleryItems() {
     if (this.activeMediaKind === 'tour') return [];
     const wantedMediaType = this.activeMediaKind === 'videos' ? 'video' : 'image';
-    return this.gallery.filter(item => item.category === this.activeGallery && item.mediaType === wantedMediaType);
+    return this.gallery.filter(item => item.category === 'Community Center' && item.mediaType === wantedMediaType);
   }
   get activeTourUrl(): string {
-    return this.activeGallery === 'Church' ? this.content.tours.church : this.content.tours.communityCenter;
+    return this.content.tours.communityCenter;
   }
   private slugify(value: string): string {
     return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'item';
@@ -693,16 +682,6 @@ export class AppComponent implements OnInit {
     this.resetGalleryPrefetch();
     this.resetGalleryLoading();
     this.queueGalleryPrefetch();
-  }
-  changeGalleryCategory(category: string) {
-    if (category === this.activeGallery) return;
-    this.activeGallery = category;
-    this.refreshVisibleGallery();
-    // Switching category collapses the grid back to its first batch, so a
-    // reader who had scrolled deep into the previous one would be left below
-    // the end of a much shorter grid. Bring the tabs back into view rather
-    // than the grid itself, so they stay reachable for the next switch.
-    document.querySelector('.gallery-tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   changeGalleryMediaKind(kind: GalleryMediaKind) {
     if (kind === this.activeMediaKind) return;
@@ -880,7 +859,7 @@ export class AppComponent implements OnInit {
       void this.loadInquiries();
     }
   }
-  setAdminView(view: 'content' | 'products' | 'inquiries' | 'bookings' | 'churchServices' | 'venueGallery') {
+  setAdminView(view: 'content' | 'inquiries' | 'bookings' | 'venueGallery') {
     this.adminView = view;
     if (view === 'content' && this.adminToken) void this.loadAdminContent();
     if (view === 'inquiries' && this.adminToken && !this.inquiries.length) {
@@ -902,6 +881,7 @@ export class AppComponent implements OnInit {
       const body = await response.json();
       if (!response.ok) throw new Error(body?.error || 'Could not load site content.');
       this.content = body.content || body;
+      this.applyTheme();
     } catch (error) {
       this.adminError = error instanceof Error ? error.message : 'Could not load site content.';
     }
@@ -919,18 +899,88 @@ export class AppComponent implements OnInit {
           site: this.content.site,
           navigation: this.content.navigation,
           hero: this.content.hero,
-          church: this.content.church,
+          statement: this.content.statement,
+          about: this.content.about,
           contact: this.content.contact,
-          tours: this.content.tours
+          tours: this.content.tours,
+          theme: this.content.theme
         })
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body?.error || 'Could not save site content.');
       this.content = body.content;
+      this.applyTheme();
+      // A full reload rather than just closing the modal: content flows into
+      // more places than this component alone re-renders on assignment (e.g.
+      // the About/Booking children's own field bindings), so reloading is the
+      // simplest way to guarantee what the admin just saved is what they see.
+      this.closeAdmin();
+      window.location.reload();
+      return;
     } catch (error) {
       this.adminError = error instanceof Error ? error.message : 'Could not save site content.';
     }
     this.contentSaving = false;
+  }
+
+  resetTheme() {
+    this.content.theme = { ...defaultSiteContent.theme };
+    this.applyTheme();
+  }
+
+  uploadSiteLogo(event: Event) {
+    this.pickAndUploadContentMedia(event, 'siteLogo', 5 * 1024 * 1024, value => (this.content.site.logo = value));
+  }
+  uploadHeroVideo(event: Event) {
+    this.pickAndUploadContentMedia(event, 'heroVideo', 100 * 1024 * 1024, value => (this.content.hero.video = value));
+  }
+  uploadHeroPoster(event: Event) {
+    this.pickAndUploadContentMedia(event, 'heroPoster', 15 * 1024 * 1024, value => (this.content.hero.poster = value));
+  }
+  uploadAboutPortrait(event: Event) {
+    this.pickAndUploadContentMedia(event, 'aboutPortrait', 15 * 1024 * 1024, value => (this.content.about.portraitImage = value));
+  }
+
+  addAboutFeature() {
+    this.content.about.features = [...(this.content.about.features || []), { title: '', description: '', image: '' }];
+  }
+  removeAboutFeature(index: number) {
+    this.content.about.features = (this.content.about.features || []).filter((_, i) => i !== index);
+  }
+  uploadAboutFeatureImage(event: Event, index: number) {
+    this.pickAndUploadContentMedia(event, 'aboutFeature', 15 * 1024 * 1024, value => (this.content.about.features[index].image = value), `aboutFeature-${index}`);
+  }
+
+  // `uploadingKey` defaults to `slot`, but callers that reuse one slot for a
+  // list of items (see uploadAboutFeatureImage) pass a per-item key instead so
+  // uploading feature #2 doesn't also show a spinner on feature #1.
+  private async pickAndUploadContentMedia(event: Event, slot: string, maxBytes: number, apply: (imagePath: string) => void, uploadingKey: string = slot) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file || !this.adminToken) return;
+    if (file.size > maxBytes) {
+      this.adminError = `Please choose a file smaller than ${Math.round(maxBytes / (1024 * 1024))} MB.`;
+      return;
+    }
+    this.contentMediaUploading = { ...this.contentMediaUploading, [uploadingKey]: true };
+    this.adminError = '';
+    try {
+      const data = await file.arrayBuffer();
+      const media = { name: file.name, mimeType: file.type, data: this.toBase64(data) };
+      const response = await fetch(`${this.api}/admin/content-media`, {
+        method: 'POST',
+        headers: { ...this.adminHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slot, media })
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error || 'Upload failed.');
+      apply(body.image);
+    } catch (error) {
+      this.adminError = error instanceof Error ? error.message : 'Upload failed.';
+    } finally {
+      this.contentMediaUploading = { ...this.contentMediaUploading, [uploadingKey]: false };
+    }
   }
 
   goToSection(section: string) {
@@ -941,7 +991,7 @@ export class AppComponent implements OnInit {
     // visitor's first fetch (e.g. while they browsed elsewhere on the site)
     // would otherwise leave a now-blocked time sitting in the panel as if it
     // were still bookable, until a full page reload happened to clear it.
-    if (section === 'eventCenter') void this.loadBookingSlots();
+    if (section === 'booking') void this.loadBookingSlots();
   }
 
   private async loadBookingSlots() {
@@ -952,11 +1002,17 @@ export class AppComponent implements OnInit {
       if (!response.ok) throw new Error('Availability unavailable');
       const body = await response.json();
       this.bookingSlots = Array.isArray(body?.slots) ? body.slots : [];
+      this.bookingBookedDates = Array.isArray(body?.bookedDates) ? body.bookedDates : [];
+      this.bookingClosedWeekdays = Array.isArray(body?.closedWeekdays) ? body.closedWeekdays : [];
+      this.bookingUnblockedDates = Array.isArray(body?.unblockedDates) ? body.unblockedDates : [];
       this.bookingPolicy = String(body?.refundPolicy || '');
       this.bookingHoldMinutes = Number(body?.holdMinutes) || 15;
     } catch (error) {
       console.error('Booking availability could not be loaded.', error);
       this.bookingSlots = [];
+      this.bookingBookedDates = [];
+      this.bookingClosedWeekdays = [];
+      this.bookingUnblockedDates = [];
       this.bookingError = 'Availability could not be loaded. Please try again shortly.';
     }
     this.bookingLoading = false;
@@ -1009,7 +1065,12 @@ export class AppComponent implements OnInit {
       });
       const body = await response.json();
       if (!response.ok || !body?.url) {
+        // Same race as onBookSlot: someone else (or the admin) could have
+        // taken/blocked this date while the request form was open, so the
+        // calendar on screen is stale -- refresh it rather than leaving a
+        // date the visitor can never actually request.
         this.bookingError = String(body?.error || 'Could not start checkout. Please try again.');
+        if (response.status === 404 || response.status === 409) await this.loadBookingSlots();
         return;
       }
       window.location.href = body.url;
@@ -1019,6 +1080,18 @@ export class AppComponent implements OnInit {
     } finally {
       this.bookingRequestSubmitting = false;
     }
+  }
+
+  // Invalidates the visitor-facing calendar cache after an admin action that
+  // could change it (publish, block, unblock, manual booking, cancel) --
+  // loadBookingSlots() repopulates it next time the visitor is on the Event
+  // Center section (see goToSection), so a stale "available" or "booked"
+  // reading never lingers behind the admin modal.
+  private clearPublicBookingCache() {
+    this.bookingSlots = [];
+    this.bookingBookedDates = [];
+    this.bookingClosedWeekdays = [];
+    this.bookingUnblockedDates = [];
   }
 
   private async loadAdminBookings() {
@@ -1045,85 +1118,48 @@ export class AppComponent implements OnInit {
     this.adminBookingLoading = false;
   }
 
-  private parseDateKey(date: string): Date {
-    const [year, month, day] = String(date).split('-').map(Number);
-    return new Date(year, (month || 1) - 1, day || 1);
-  }
-
-  private formatDateKey(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-
-  // "Week" is 7 consecutive days starting on the chosen date. "Month" runs to
-  // the end of that date's calendar month rather than a fixed 30-day span, so
-  // starting mid-month reads as "publish the rest of it" -- the more useful
-  // reading when the admin is filling a gap partway through a month.
-  private publishRangeEndDate(date: string, range: 'day' | 'week' | 'month'): string {
-    const start = this.parseDateKey(date);
-    if (range === 'week') {
-      const end = new Date(start);
-      end.setDate(end.getDate() + 6);
-      return this.formatDateKey(end);
-    }
-    if (range === 'month') {
-      // Day 0 of the following month is the last day of this one.
-      return this.formatDateKey(new Date(start.getFullYear(), start.getMonth() + 1, 0));
-    }
-    return date;
-  }
-
-  async createSlot() {
+  // Records a reservation taken outside the site (phone, cash, a walk-in)
+  // straight as a confirmed booking -- the day is open by default until this
+  // runs. There's only one thing to book -- the event space, flat $1,200 rate
+  // -- so the server fills that in; this just says which day and for whom.
+  async createManualBooking() {
+    if (this.manualBookingSubmitting) return;
     this.adminBookingError = '';
     this.adminBookingNotice = '';
-    if (!this.newSlot.date) {
-      this.adminBookingError = 'Pick a date to publish.';
+    if (!this.newManualBooking.date) {
+      this.adminBookingError = 'Pick a date for the booking.';
       return;
     }
-    const endDate = this.publishRangeEndDate(this.newSlot.date, this.newSlot.range);
-    const isRange = endDate !== this.newSlot.date;
-    const response = await fetch(`${this.api}/admin/booking/slots`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.adminToken}` },
-      body: JSON.stringify({
-        service: this.newSlot.service,
-        date: this.newSlot.date,
-        endDate: isRange ? endDate : undefined,
-        openTime: this.newSlot.openTime,
-        closeTime: this.newSlot.closeTime,
-        // The form takes whole dollars; the API works in cents throughout.
-        sessionFee: Math.round(Number(this.newSlot.sessionFee) * 100),
-        sessionMinutes: Number(this.newSlot.sessionMinutes) || 0,
-        gapMinutes: Number(this.newSlot.gapMinutes) || 0,
-        location: this.newSlot.location,
-        unblockDay: this.newSlot.unblockDay
-      })
-    });
-    const body = await response.json();
-    if (!response.ok) {
-      this.adminBookingError = String(body?.error || 'Could not publish that day.');
+    if (!this.newManualBooking.name.trim()) {
+      this.adminBookingError = "Enter the customer's name.";
       return;
     }
-    // Say what the hours actually expanded to -- publishing a day (or range of
-    // days) is the one admin action whose result is not obvious from the inputs.
-    const skipped = Number(body?.skipped) || 0;
-    const daysPublished = Number(body?.daysPublished) || 0;
-    const unblockedDays = Number(body?.unblockedDays) || 0;
-    const rangeNote = isRange ? ` across ${daysPublished} day${daysPublished === 1 ? '' : 's'}` : '';
-    const unblockedNote = !body?.unblockedDay
-      ? ''
-      : isRange
-        ? `${unblockedDays} day${unblockedDays === 1 ? '' : 's'} unblocked. `
-        : 'Day unblocked. ';
-    this.adminBookingNotice = unblockedNote
-      + `Published ${body?.created} session${body?.created === 1 ? '' : 's'}${rangeNote}`
-      + (skipped ? `, skipped ${skipped} already published or past.` : '.');
-    this.newSlot.date = '';
-    this.newSlot.unblockDay = false;
-    await this.loadAdminBookings();
-    this.bookingSlots = [];
+    this.manualBookingSubmitting = true;
+    try {
+      const response = await fetch(`${this.api}/admin/bookings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.adminToken}` },
+        body: JSON.stringify({
+          date: this.newManualBooking.date,
+          location: this.newManualBooking.location,
+          name: this.newManualBooking.name,
+          email: this.newManualBooking.email,
+          phone: this.newManualBooking.phone,
+          notes: this.newManualBooking.notes
+        })
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        this.adminBookingError = String(body?.error || 'Could not record that booking.');
+        return;
+      }
+      this.adminBookingNotice = `Recorded a booking for ${this.newManualBooking.date}.`;
+      this.newManualBooking = { date: '', location: '', name: '', email: '', phone: '', notes: '' };
+      await this.loadAdminBookings();
+      this.clearPublicBookingCache();
+    } finally {
+      this.manualBookingSubmitting = false;
+    }
   }
 
   toggleBlockWeekday(day: number) {
@@ -1151,10 +1187,10 @@ export class AppComponent implements OnInit {
     }
     const hidden = Number(body?.hiddenSessions) || 0;
     this.adminBookingNotice = hidden
-      ? `Block added. It hides ${hidden} already published session${hidden === 1 ? '' : 's'}.`
-      : 'Block added. No published sessions fall inside it.';
+      ? `Block added. It hides ${hidden} already published day${hidden === 1 ? '' : 's'}.`
+      : 'Block added. No published days fall inside it.';
     await this.loadAdminBookings();
-    this.bookingSlots = [];
+    this.clearPublicBookingCache();
   }
 
   async removeBlock(block: any) {
@@ -1168,7 +1204,7 @@ export class AppComponent implements OnInit {
       return;
     }
     await this.loadAdminBookings();
-    this.bookingSlots = [];
+    this.clearPublicBookingCache();
   }
 
   async createUnblock() {
@@ -1181,16 +1217,15 @@ export class AppComponent implements OnInit {
     const date = this.newUnblock.date;
     const endDate = this.newUnblock.endDate;
     const isRange = !!endDate && endDate !== date;
-    const startTime = isRange ? '' : this.newUnblock.startTime;
 
     const response = await fetch(`${this.api}/admin/booking/unblocks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.adminToken}` },
-      body: JSON.stringify({ date, endDate: isRange ? endDate : undefined, startTime, reason: this.newUnblock.reason })
+      body: JSON.stringify({ date, endDate: isRange ? endDate : undefined, reason: this.newUnblock.reason })
     });
     const body = await response.json();
     if (!response.ok) {
-      this.adminBookingError = String(body?.error || 'Could not unblock that day or session.');
+      this.adminBookingError = String(body?.error || 'Could not unblock that day.');
       return;
     }
 
@@ -1200,32 +1235,13 @@ export class AppComponent implements OnInit {
       this.adminBookingNotice = unblockedDays
         ? `Unblocked ${unblockedDays} day${unblockedDays === 1 ? '' : 's'} from ${date} to ${endDate}`
           + (skipped ? ` (${skipped} already open, skipped).` : '.')
-          + ' Days with no sessions published yet still need publishing above to become bookable.'
         : `Nothing to unblock from ${date} to ${endDate} -- none of those days are blocked.`;
     } else {
-      // An unblock only lifts the block rule -- it cannot bring back a session
-      // that publishDay skipped and never wrote a row for. Without this check
-      // the admin sees "Unblocked" and reasonably assumes visitors can now
-      // book it, when nothing on the public calendar actually changed.
-      const alreadyBookable = this.adminSlots.some(slot => (
-        slot.date === date && slot.status === 'open' && (!startTime || slot.startTime === startTime)
-      ));
-      if (alreadyBookable) {
-        this.adminBookingNotice = startTime
-          ? `Unblocked ${date} at ${startTime}. That session is bookable now.`
-          : `Unblocked ${date}. Its sessions are bookable now.`;
-      } else {
-        this.newSlot.date = date;
-        this.newSlot.range = 'day';
-        this.newSlot.unblockDay = false;
-        this.adminBookingNotice = `Unblocked ${date}${startTime ? ` at ${startTime}` : ''}, but no sessions are `
-          + 'published for it yet, so nothing changed for visitors. Set hours above and click "Publish day +" to '
-          + 'create them -- the date is already filled in.';
-      }
+      this.adminBookingNotice = `Unblocked ${date}. It's bookable now.`;
     }
-    this.newUnblock = { date: '', endDate: '', startTime: '', reason: '' };
+    this.newUnblock = { date: '', endDate: '', reason: '' };
     await this.loadAdminBookings();
-    this.bookingSlots = [];
+    this.clearPublicBookingCache();
   }
 
   async removeUnblock(rule: any) {
@@ -1239,42 +1255,40 @@ export class AppComponent implements OnInit {
       return;
     }
     await this.loadAdminBookings();
-    this.bookingSlots = [];
+    this.clearPublicBookingCache();
   }
 
-  // A blocked open session can be freed in place with a one-click unblock rule
-  // matching its exact date + start time. Freeing a session that was never
-  // created (because publishDay skipped it) needs the day re-published instead.
+  // A blocked open day can be freed in place with a one-click unblock rule
+  // matching its exact date.
   async unblockSlot(slot: any) {
     this.adminBookingError = '';
     const response = await fetch(`${this.api}/admin/booking/unblocks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.adminToken}` },
-      body: JSON.stringify({ date: slot.date, startTime: slot.startTime || '', reason: 'Unblocked from the sessions list' })
+      body: JSON.stringify({ date: slot.date, reason: 'Unblocked from the bookings list' })
     });
     const body = await response.json();
     if (!response.ok) {
-      this.adminBookingError = String(body?.error || 'Could not unblock that session.');
+      this.adminBookingError = String(body?.error || 'Could not unblock that day.');
       return;
     }
-    this.adminBookingNotice = `Unblocked ${slot.date}${slot.startTime ? ` at ${slot.startTime}` : ''}.`;
+    this.adminBookingNotice = `Unblocked ${slot.date}.`;
     await this.loadAdminBookings();
-    this.bookingSlots = [];
+    this.clearPublicBookingCache();
   }
 
   async removeSlot(slot: any) {
-    const label = slot.startTime ? `${slot.date} at ${slot.startTime}` : slot.date;
-    if (!await this.requestConfirmation(`Remove ${label} from availability?`, 'Remove session')) return;
+    if (!await this.requestConfirmation(`Remove ${slot.date} from availability?`, 'Remove day')) return;
     const response = await fetch(`${this.api}/admin/booking/slots/${encodeURIComponent(slot.id)}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${this.adminToken}` }
     });
     if (!response.ok) {
-      this.adminBookingError = String((await response.json())?.error || 'Could not remove that session.');
+      this.adminBookingError = String((await response.json())?.error || 'Could not remove that day.');
       return;
     }
     await this.loadAdminBookings();
-    this.bookingSlots = [];
+    this.clearPublicBookingCache();
   }
 
   async saveAgreedTime(booking: any, agreedTime: string) {
@@ -1300,79 +1314,13 @@ export class AppComponent implements OnInit {
       return;
     }
     await this.loadAdminBookings();
-    this.bookingSlots = [];
+    this.clearPublicBookingCache();
   }
 
   formatMoney(cents: number): string {
     return `$${((Number(cents) || 0) / 100).toFixed(2)}`;
   }
 
-  pickMedia(event: Event) {
-    const file = (event.target as HTMLInputElement).files?.[0];
-    if (!file) return;
-    this.uploadFile = file;
-    this.uploadPreview = URL.createObjectURL(file);
-  }
-  pickChurchServiceMedia(event: Event) {
-    const file = (event.target as HTMLInputElement).files?.[0];
-    if (!file) return;
-    this.churchServiceUploadFile = file;
-    this.churchServiceUploadPreview = URL.createObjectURL(file);
-  }
-  async uploadChurchServiceMedia() {
-    if (!this.churchServiceUploadFile || !this.churchServiceTitle.trim()) return;
-    if (this.churchServiceUploadFile.size > 45 * 1024 * 1024) {
-      this.churchServiceError = 'Please choose a file smaller than 45 MB.';
-      return;
-    }
-    this.churchServiceUploading = true;
-    this.churchServiceError = '';
-    try {
-      const data = await this.churchServiceUploadFile.arrayBuffer();
-      const media = { name: this.churchServiceUploadFile.name, mimeType: this.churchServiceUploadFile.type, data: this.toBase64(data) };
-      const response = await fetch(`${this.api}/admin/church-services`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.adminToken}` },
-        body: JSON.stringify({ title: this.churchServiceTitle.trim(), media })
-      });
-      const body = await response.json();
-      if (!response.ok) {
-        this.churchServiceError = body.error || 'Upload failed.';
-        return;
-      }
-      this.gallery = [...this.gallery, body];
-      this.churchServiceTitle = '';
-      this.churchServiceUploadFile = undefined;
-      this.churchServiceUploadPreview = '';
-    } catch {
-      this.churchServiceError = 'Network error while uploading.';
-    } finally {
-      this.churchServiceUploading = false;
-    }
-  }
-  async deleteChurchServiceMedia(item: GalleryItem) {
-    if (!await this.requestConfirmation(`Delete "${item.title}"?`, 'Delete media')) return;
-    const fileName = decodeURIComponent(item.image.split('/').pop() || '');
-    if (!fileName) return;
-    try {
-      const response = await fetch(`${this.api}/admin/church-services/${encodeURIComponent(fileName)}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${this.adminToken}` }
-      });
-      if (!response.ok) {
-        const body = await response.json();
-        await this.showNotice(body.error || 'Could not delete this file.', 'Delete failed');
-        return;
-      }
-      this.gallery = this.gallery.filter(media => media.image !== item.image);
-    } catch {
-      await this.showNotice('Network error while deleting this file.', 'Delete failed');
-    }
-  }
-  setVenueGalleryCategory(category: 'Community Center' | 'Church') {
-    this.venueGalleryCategory = category;
-    this.venueGalleryError = '';
-  }
   pickVenueGalleryMedia(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (!file) return;
@@ -1393,7 +1341,7 @@ export class AppComponent implements OnInit {
       const response = await fetch(`${this.api}/admin/venue-gallery`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.adminToken}` },
-        body: JSON.stringify({ category: this.venueGalleryFolder(this.venueGalleryCategory), title: this.venueGalleryTitle.trim(), media })
+        body: JSON.stringify({ category: 'community-center', title: this.venueGalleryTitle.trim(), media })
       });
       const body = await response.json();
       if (!response.ok) {
@@ -1416,7 +1364,7 @@ export class AppComponent implements OnInit {
     const fileName = decodeURIComponent(item.image.split('/').pop() || '');
     if (!fileName) return;
     try {
-      const response = await fetch(`${this.api}/admin/venue-gallery/${encodeURIComponent(this.venueGalleryFolder(this.venueGalleryCategory))}/${encodeURIComponent(fileName)}`, {
+      const response = await fetch(`${this.api}/admin/venue-gallery/community-center/${encodeURIComponent(fileName)}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${this.adminToken}` }
       });
@@ -1533,22 +1481,6 @@ export class AppComponent implements OnInit {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
     return date.toLocaleString();
-  }
-  async publishProduct() {
-    if (!this.uploadFile || !this.product.title.trim() || !this.product.price) return;
-    if (this.uploadFile.size > 45 * 1024 * 1024) { this.adminError = 'Please choose a file smaller than 45 MB.'; return; }
-    this.uploading = true; this.adminError = '';
-    const data = await this.uploadFile.arrayBuffer();
-    const media = { name: this.uploadFile.name, mimeType: this.uploadFile.type, data: this.toBase64(data) };
-    const response = await fetch(`${this.api}/admin/products`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.adminToken}` }, body: JSON.stringify({ ...this.product, price: Math.round(this.product.price * 100), media }) });
-    const body = await response.json(); this.uploading = false;
-    if (!response.ok) { this.adminError = body.error || 'Upload failed.'; return; }
-    const publishedProduct = this.normalizeProduct(body);
-    if (publishedProduct.image) {
-      this.apiProducts.unshift(publishedProduct);
-      this.rebuildProducts();
-    }
-    this.work.unshift({ ...body, type: body.category, price: body.price / 100 }); this.showAll = true; this.product = { title: '', category: 'Print', price: 95, description: '' }; this.uploadFile = undefined; this.uploadPreview = ''; this.adminOpen = false; setTimeout(() => this.scrollTo('work'));
   }
   private toBase64(buffer: ArrayBuffer) { let binary = ''; const bytes = new Uint8Array(buffer); const chunk = 8192; for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, i + chunk)); return btoa(binary); }
   async buy(item: Work) {
