@@ -77,8 +77,8 @@
         <button type="button" class="underlined" (click)="cancelRequest()">Clear</button>
       </div>
       <p class="booking-times-hint">
-        $1,200 for the whole venue, 9am to 10pm. Pay the deposit to provisionally hold this date --
-        the balance is settled once we confirm the details.
+        The whole venue, 9am to 10pm. Pay the reservation fee to provisionally hold this date --
+        the rental fee is due 15 days before the event, once we confirm the details.
       </p>
       <form class="booking-form" (ngSubmit)="submitRequest()">
         <label>
@@ -94,12 +94,24 @@
           <input type="tel" name="requestPhone" [(ngModel)]="requestForm.phone" autocomplete="tel">
         </label>
         <label>
+          Mailing address <span class="optional">optional</span>
+          <textarea name="requestAddress" [(ngModel)]="requestForm.address" placeholder="Street, city, state, ZIP" autocomplete="street-address"></textarea>
+        </label>
+        <label>
+          Event description <span class="optional">optional</span>
+          <input type="text" name="requestEventDescription" [(ngModel)]="requestForm.eventDescription" placeholder="e.g. Wedding reception">
+        </label>
+        <label>
+          Number of guests planned <span class="optional">optional</span>
+          <input type="number" min="0" name="requestGuestCount" [(ngModel)]="requestForm.guestCount">
+        </label>
+        <label>
           Anything we should know <span class="optional">optional</span>
-          <textarea name="requestNotes" [(ngModel)]="requestForm.notes" placeholder="Guest count, setup needs, the occasion..."></textarea>
+          <textarea name="requestNotes" [(ngModel)]="requestForm.notes" placeholder="Setup needs, timing, anything else..."></textarea>
         </label>
         <div class="booking-actions">
           <button type="submit" class="booking-pay" [disabled]="requestSubmitting">
-            {{ requestSubmitting ? 'Starting checkout...' : 'Reserve ' + formatDay(requestDateInput) + ' with a deposit' }}
+            {{ requestSubmitting ? 'Starting checkout...' : 'Reserve ' + formatDay(requestDateInput) + ' with a reservation fee' }}
           </button>
           <button type="button" class="booking-back" (click)="cancelRequest()" [disabled]="requestSubmitting">Cancel</button>
         </div>
@@ -130,8 +142,8 @@
       <p class="booking-summary-service">Event space, 9am – 10pm<span *ngIf="slot.location"> · {{ slot.location }}</span></p>
       <dl class="booking-costs">
         <div><dt>Rental fee</dt><dd>{{ money(slot.sessionFee) }}</dd></div>
-        <div class="is-due"><dt>Deposit now</dt><dd>{{ money(slot.deposit) }}</dd></div>
-        <div><dt>Balance on the day</dt><dd>{{ money(slot.balanceDue) }}</dd></div>
+        <div class="is-due"><dt>Reservation fee now</dt><dd>{{ money(slot.deposit) }}</dd></div>
+        <div><dt>Rental fee due 15 days before</dt><dd>{{ money(slot.balanceDue) }}</dd></div>
       </dl>
       <p class="booking-policy" *ngIf="refundPolicy">{{ refundPolicy }}</p>
       <p class="booking-hold">This day is held for you for {{ holdMinutes }} minutes while you pay.</p>
@@ -151,15 +163,27 @@
         <input type="tel" name="bookingPhone" [(ngModel)]="form.phone" autocomplete="tel">
       </label>
       <label>
+        Mailing address <span class="optional">optional</span>
+        <textarea name="bookingAddress" [(ngModel)]="form.address" placeholder="Street, city, state, ZIP" autocomplete="street-address"></textarea>
+      </label>
+      <label>
+        Event description <span class="optional">optional</span>
+        <input type="text" name="bookingEventDescription" [(ngModel)]="form.eventDescription" placeholder="e.g. Wedding reception">
+      </label>
+      <label>
+        Number of guests planned <span class="optional">optional</span>
+        <input type="number" min="0" name="bookingGuestCount" [(ngModel)]="form.guestCount">
+      </label>
+      <label>
         Anything we should know <span class="optional">optional</span>
-        <textarea name="bookingNotes" [(ngModel)]="form.notes" placeholder="Guest count, setup needs, the occasion..."></textarea>
+        <textarea name="bookingNotes" [(ngModel)]="form.notes" placeholder="Setup needs, timing, anything else..."></textarea>
       </label>
 
       <p class="error" *ngIf="formError">{{ formError }}</p>
 
       <div class="booking-actions">
         <button type="submit" class="booking-pay" [disabled]="submitting">
-          {{ submitting ? 'Starting checkout...' : 'Reserve ' + formatDay(slot.date) + ' with ' + money(slot.deposit) + ' deposit' }}
+          {{ submitting ? 'Starting checkout...' : 'Reserve ' + formatDay(slot.date) + ' with ' + money(slot.deposit) + ' reservation fee' }}
         </button>
         <button type="button" class="booking-back" (click)="cancel()" [disabled]="submitting">Pick another day</button>
       </div>

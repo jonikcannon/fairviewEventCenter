@@ -19,6 +19,9 @@ export type BookingRequest = {
   email: string;
   phone: string;
   notes: string;
+  address: string;
+  eventDescription: string;
+  guestCount: string;
 };
 
 /**
@@ -33,6 +36,9 @@ export type BookingDateRequest = {
   email: string;
   phone: string;
   notes: string;
+  address: string;
+  eventDescription: string;
+  guestCount: string;
 };
 
 @Component({
@@ -67,10 +73,13 @@ export class BookingComponent {
   selectedSlotId = '';
   calendarMonth = this.firstOfMonth(new Date());
   formError = '';
-  form = { name: '', email: '', phone: '', notes: '' };
+  // address/eventDescription/guestCount feed the Rental Agreement generated
+  // once the reservation fee is paid (see fairviewApi/rentalAgreement.js) --
+  // not used anywhere else in the booking flow.
+  form = { name: '', email: '', phone: '', notes: '', address: '', eventDescription: '', guestCount: '' };
 
   requestDateInput = '';
-  requestForm = { name: '', email: '', phone: '', notes: '' };
+  requestForm = { name: '', email: '', phone: '', notes: '', address: '', eventDescription: '', guestCount: '' };
 
   // Nothing has a slot anywhere yet. Only drives the "No days are open..."
   // banner text; it no longer gates whether a date is clickable (see
@@ -269,7 +278,10 @@ export class BookingComponent {
       name,
       email,
       phone: this.requestForm.phone.trim(),
-      notes: this.requestForm.notes.trim()
+      notes: this.requestForm.notes.trim(),
+      address: this.requestForm.address.trim(),
+      eventDescription: this.requestForm.eventDescription.trim(),
+      guestCount: this.requestForm.guestCount.trim()
     });
   }
 
@@ -312,7 +324,10 @@ export class BookingComponent {
       name,
       email,
       phone: this.form.phone.trim(),
-      notes: this.form.notes.trim()
+      notes: this.form.notes.trim(),
+      address: this.form.address.trim(),
+      eventDescription: this.form.eventDescription.trim(),
+      guestCount: this.form.guestCount.trim()
     });
   }
 

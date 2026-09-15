@@ -39,6 +39,7 @@ const inquiriesLogFile = path.join(inquiriesDir, 'contact-inquiries.jsonl');
 const orderStore = require('./orders');
 const fulfilment = require('./fulfilment');
 const bookingStore = require('./booking');
+const rentalAgreement = require('./rentalAgreement');
 const siteContent = require('./content');
 orderStore.ensureStore();
 bookingStore.ensureStore();
@@ -1429,7 +1430,7 @@ app.get('/api/booking/slots', (req, res) => {
     bookedDates: bookingStore.listUnavailableDates({ from, to }),
     closedWeekdays: bookingStore.listClosedWeekdays(),
     unblockedDates: bookingStore.listUnblockedDates({ from, to }),
-    depositRate: bookingStore.DEPOSIT_RATE,
+    reservationFeeCents: bookingStore.reservationFee(),
     refundPolicy: bookingStore.refundPolicyText(),
     holdMinutes: bookingStore.holdMinutes()
   });
@@ -1440,8 +1441,8 @@ app.get('/api/booking/slots', (req, res) => {
 // an { error, status } to relay as-is or the response body to send. The hold
 // expires on its own if the client never pays, so an abandoned checkout cannot
 // park a date indefinitely.
-async function holdSlotAndCheckout(slotId, { name, email, phone, notes }) {
-  const held = bookingStore.holdSlot(slotId, { name, email, phone, notes });
+async function holdSlotAndCheckout(slotId, { name, email, phone, notes, address, eventDescription, guestCount }) {
+  const held = bookingStore.holdSlot(slotId, { name, email, phone, notes, address, eventDescription, guestCount });
   if (held.error) return { error: held.error, status: held.status || 400 };
 
   const booking = held.booking;
@@ -1451,7 +1452,7 @@ async function holdSlotAndCheckout(slotId, { name, email, phone, notes }) {
     items: [{
       productId: '',
       sku: `BOOKING-${booking.date}`,
-      title: `Event space deposit (${booking.date})`,
+      title: `Event space reservation fee (${booking.date})`,
       mediaType: 'image',
       imageKey: '',
       quantity: 1,
@@ -1478,8 +1479,8 @@ async function holdSlotAndCheckout(slotId, { name, email, phone, notes }) {
           currency: 'usd',
           unit_amount: booking.deposit,
           product_data: {
-            name: 'Event space deposit',
-            description: `Reserves ${booking.date}, 9am - 10pm. Balance of $${(booking.balanceDue / 100).toFixed(2)} due on the day. ${booking.refundPolicy}`
+            name: 'Event space reservation fee',
+            description: `Reserves ${booking.date}, 9am - 10pm. Rental fee of $${(booking.balanceDue / 100).toFixed(2)} due 15 days before the event. ${booking.refundPolicy}`
           }
         }
       }],
@@ -1512,7 +1513,10 @@ app.post('/api/booking/hold', rateLimit({ windowMs: 900000, max: 20, message: { 
     name,
     email,
     phone: String(req.body?.phone || '').trim(),
-    notes: String(req.body?.notes || '').trim()
+    notes: String(req.body?.notes || '').trim(),
+    address: String(req.body?.address || '').trim(),
+    eventDescription: String(req.body?.eventDescription || '').trim(),
+    guestCount: req.body?.guestCount
   });
   if (result.error) return res.status(result.status).json({ error: result.error });
   res.json(result.body);
@@ -1537,7 +1541,10 @@ app.post('/api/booking/request-hold', rateLimit({ windowMs: 900000, max: 20, mes
     name,
     email,
     phone: String(req.body?.phone || '').trim(),
-    notes: String(req.body?.notes || '').trim()
+    notes: String(req.body?.notes || '').trim(),
+    address: String(req.body?.address || '').trim(),
+    eventDescription: String(req.body?.eventDescription || '').trim(),
+    guestCount: req.body?.guestCount
   });
   if (result.error) return res.status(result.status).json({ error: result.error });
   res.json(result.body);
@@ -1550,6 +1557,20 @@ app.get('/api/admin/bookings', auth, (req, res) => {
     .map(booking => ({ ...booking, refundable: bookingStore.isRefundable(booking) }))
     .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
   res.json({ bookings: !status || status === 'all' ? all : all.filter(booking => booking.status === status) });
+});
+
+// The Rental Agreement, rendered from a confirmed booking's own frozen
+// fields (see rentalAgreement.js) -- only available once the reservation fee
+// has actually been paid (confirmed), matching "generate an agreement once a
+// deposit is made." Returned as printable HTML rather than a stored PDF: the
+// booking record doesn't change after confirmation, so re-rendering later
+// reproduces the same document.
+app.get('/api/admin/bookings/:id/agreement', auth, (req, res) => {
+  const booking = bookingStore.readBookings().find(entry => entry.id === String(req.params.id || ''));
+  if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+  if (booking.status !== 'confirmed') return res.status(409).json({ error: 'This booking has no paid reservation fee yet.' });
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.send(rentalAgreement.generateAgreementHtml(booking));
 });
 
 // Records a reservation taken outside the site (phone, cash, a walk-in)
@@ -1565,7 +1586,10 @@ app.post('/api/admin/bookings', auth, (req, res) => {
     name: req.body?.name,
     email: req.body?.email,
     phone: req.body?.phone,
-    notes: req.body?.notes
+    notes: req.body?.notes,
+    address: req.body?.address,
+    eventDescription: req.body?.eventDescription,
+    guestCount: req.body?.guestCount
   });
   if (result.error) return res.status(result.status || 400).json({ error: result.error });
   res.status(201).json(result);
@@ -1593,6 +1617,23 @@ app.delete('/api/admin/booking/slots/:id', auth, (req, res) => {
   const removed = bookingStore.deleteSlot(String(req.params.id || ''));
   if (removed.error) return res.status(removed.status || 400).json({ error: removed.error });
   res.json({ ok: true });
+});
+
+// Session fee and deposit rate: read/write the persisted override so the
+// price can change without an env var edit or a deploy. Only affects slots
+// created from here on -- an already-open or already-booked slot keeps the
+// fee it was created with (see eventSpaceFee()/depositFor() in booking.js).
+app.get('/api/admin/booking/pricing', auth, (req, res) => {
+  res.json(bookingStore.getPricingSettings());
+});
+
+app.put('/api/admin/booking/pricing', auth, (req, res) => {
+  try {
+    const saved = bookingStore.setPricingSettings(req.body || {});
+    return res.json(saved);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || 'Invalid pricing.' });
+  }
 });
 
 // Recurring unavailability, e.g. Mon-Fri for a day job. Reports how many

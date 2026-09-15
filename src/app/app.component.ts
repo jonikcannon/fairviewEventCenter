@@ -1,6 +1,7 @@
 import { Component, ElementRef, HostListener, OnInit, ViewChild, ChangeDetectorRef, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { GalleryComponent, GalleryMediaKind } from './gallery/gallery.component';
 import { Service, ServicesComponent } from './services/services.component';
 import { AboutComponent } from './about/about.component';
@@ -89,10 +90,20 @@ export class AppComponent implements OnInit {
   adminView: 'content' | 'inquiries' | 'bookings' | 'venueGallery' = 'content';
   private changeDetector: ChangeDetectorRef;
   private ngZone: NgZone;
-  constructor(changeDetector: ChangeDetectorRef, ngZone: NgZone) {
+  private sanitizer: DomSanitizer;
+  constructor(changeDetector: ChangeDetectorRef, ngZone: NgZone, sanitizer: DomSanitizer) {
     this.changeDetector = changeDetector;
     this.ngZone = ngZone;
+    this.sanitizer = sanitizer;
   }
+  // Public "questions" form on the Contact section -- posts to /api/contact,
+  // the same endpoint the admin Inquiries tab reads from.
+  readonly contactServiceOptions = ['Wedding', 'Meeting', 'Celebration', 'Other'];
+  contactForm = { name: '', email: '', service: this.contactServiceOptions[0], message: '' };
+  contactSubmitting = false;
+  contactFormSuccess = '';
+  contactFormError = '';
+
   // Admin uploads for the venue gallery's Community Center category.
   venueGalleryTitle = '';
   venueGalleryUploadFile?: File;
@@ -102,6 +113,7 @@ export class AppComponent implements OnInit {
   venueGalleryTourSaving = false;
   adminEmail = '';
   adminPassword = '';
+  adminLoginSubmitting = false;
   adminToken = sessionStorage.getItem('fairview_admin_token') || '';
   adminAuthProvider = sessionStorage.getItem('fairview_admin_provider') || '';
   adminError = '';
@@ -293,6 +305,16 @@ export class AppComponent implements OnInit {
   adminBookingError = '';
   adminBookingLoading = false;
   adminBookingNotice = '';
+  // Rental fee and reservation fee, edited in dollars here and converted to
+  // cents at the API boundary (see loadAdminBookings/saveBookingPricing). The
+  // reservation fee is paid on top of the rental fee, not a prepayment
+  // against it. Only affects slots created after a save -- an already-open
+  // or already-booked day keeps the fees it was created with.
+  bookingPricing = { sessionFee: 1200, reservationFee: 100 };
+  bookingPricingLoading = false;
+  bookingPricingSaving = false;
+  bookingPricingError = '';
+  bookingPricingNotice = '';
   // A reservation taken outside the site (phone, cash, a walk-in): recorded
   // straight as a confirmed booking, no deposit/Stripe involved, so the day
   // stops showing as bookable online. There's only one thing to book -- the
@@ -304,7 +326,10 @@ export class AppComponent implements OnInit {
     name: '',
     email: '',
     phone: '',
-    notes: ''
+    notes: '',
+    address: '',
+    eventDescription: '',
+    guestCount: ''
   };
   adminBlocks: any[] = [];
   adminUnblocks: any[] = [];
@@ -329,6 +354,12 @@ export class AppComponent implements OnInit {
   }
   set venueGalleryTourUrl(value: string) {
     this.content.tours.communityCenter = value;
+  }
+  // Same HTTPS-only rule as the public gallery's safeTourUrl -- lets the
+  // admin preview the embed without loosening the iframe src sanitization.
+  get safeVenueGalleryTourUrl(): SafeResourceUrl | null {
+    if (!/^https:\/\//i.test(this.venueGalleryTourUrl)) return null;
+    return this.sanitizer.bypassSecurityTrustResourceUrl(this.venueGalleryTourUrl);
   }
   get visibleCatalogCategories() {
     return this.catalogCategories;
@@ -994,6 +1025,30 @@ export class AppComponent implements OnInit {
     if (section === 'booking') void this.loadBookingSlots();
   }
 
+  async submitContactForm() {
+    this.contactFormError = '';
+    this.contactFormSuccess = '';
+    this.contactSubmitting = true;
+    try {
+      const response = await fetch(`${this.api}/contact`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.contactForm)
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        this.contactFormError = body.error || 'Could not send your message right now.';
+        return;
+      }
+      this.contactFormSuccess = 'Thanks -- your message has been sent. We will get back to you shortly.';
+      this.contactForm = { name: '', email: '', service: this.contactServiceOptions[0], message: '' };
+    } catch {
+      this.contactFormError = 'Network error. Please try again in a moment.';
+    } finally {
+      this.contactSubmitting = false;
+    }
+  }
+
   private async loadBookingSlots() {
     this.bookingLoading = true;
     this.bookingError = '';
@@ -1100,15 +1155,21 @@ export class AppComponent implements OnInit {
     this.adminBookingError = '';
     try {
       const headers = { Authorization: `Bearer ${this.adminToken}` };
-      const [bookingsRes, slotsRes, blocksRes, unblocksRes] = await Promise.all([
+      const [bookingsRes, slotsRes, blocksRes, unblocksRes, pricingRes] = await Promise.all([
         fetch(`${this.api}/admin/bookings`, { headers }),
         fetch(`${this.api}/admin/booking/slots`, { headers }),
         fetch(`${this.api}/admin/booking/blocks`, { headers }),
-        fetch(`${this.api}/admin/booking/unblocks`, { headers })
+        fetch(`${this.api}/admin/booking/unblocks`, { headers }),
+        fetch(`${this.api}/admin/booking/pricing`, { headers })
       ]);
-      if (!bookingsRes.ok || !slotsRes.ok || !blocksRes.ok || !unblocksRes.ok) throw new Error('Booking data unavailable');
+      if (!bookingsRes.ok || !slotsRes.ok || !blocksRes.ok || !unblocksRes.ok || !pricingRes.ok) throw new Error('Booking data unavailable');
       this.adminBookings = (await bookingsRes.json())?.bookings || [];
       this.adminSlots = (await slotsRes.json())?.slots || [];
+      const pricing = await pricingRes.json();
+      this.bookingPricing = {
+        sessionFee: Math.round((Number(pricing?.sessionFeeCents) || 0)) / 100,
+        reservationFee: Math.round((Number(pricing?.reservationFeeCents) || 0)) / 100
+      };
       this.adminBlocks = (await blocksRes.json())?.blocks || [];
       this.adminUnblocks = (await unblocksRes.json())?.unblocks || [];
     } catch (error) {
@@ -1116,6 +1177,35 @@ export class AppComponent implements OnInit {
       this.adminBookingError = 'Could not load bookings.';
     }
     this.adminBookingLoading = false;
+  }
+
+  async saveBookingPricing() {
+    this.bookingPricingError = '';
+    this.bookingPricingNotice = '';
+    const sessionFeeCents = Math.round((Number(this.bookingPricing.sessionFee) || 0) * 100);
+    const reservationFeeCents = Math.round((Number(this.bookingPricing.reservationFee) || 0) * 100);
+    this.bookingPricingSaving = true;
+    try {
+      const response = await fetch(`${this.api}/admin/booking/pricing`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.adminToken}` },
+        body: JSON.stringify({ sessionFeeCents, reservationFeeCents })
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        this.bookingPricingError = body.error || 'Could not save pricing.';
+        return;
+      }
+      this.bookingPricing = {
+        sessionFee: Math.round(Number(body.sessionFeeCents) || 0) / 100,
+        reservationFee: Math.round(Number(body.reservationFeeCents) || 0) / 100
+      };
+      this.bookingPricingNotice = 'Saved. This applies to days published from now on -- already-open or booked days keep their original fee.';
+    } catch {
+      this.bookingPricingError = 'Network error. Please try again.';
+    } finally {
+      this.bookingPricingSaving = false;
+    }
   }
 
   // Records a reservation taken outside the site (phone, cash, a walk-in)
@@ -1145,7 +1235,10 @@ export class AppComponent implements OnInit {
           name: this.newManualBooking.name,
           email: this.newManualBooking.email,
           phone: this.newManualBooking.phone,
-          notes: this.newManualBooking.notes
+          notes: this.newManualBooking.notes,
+          address: this.newManualBooking.address,
+          eventDescription: this.newManualBooking.eventDescription,
+          guestCount: this.newManualBooking.guestCount
         })
       });
       const body = await response.json();
@@ -1154,7 +1247,7 @@ export class AppComponent implements OnInit {
         return;
       }
       this.adminBookingNotice = `Recorded a booking for ${this.newManualBooking.date}.`;
-      this.newManualBooking = { date: '', location: '', name: '', email: '', phone: '', notes: '' };
+      this.newManualBooking = { date: '', location: '', name: '', email: '', phone: '', notes: '', address: '', eventDescription: '', guestCount: '' };
       await this.loadAdminBookings();
       this.clearPublicBookingCache();
     } finally {
@@ -1321,6 +1414,52 @@ export class AppComponent implements OnInit {
     return `$${((Number(cents) || 0) / 100).toFixed(2)}`;
   }
 
+  // The Rental Agreement is served as HTML, gated behind the admin bearer
+  // token (it carries the customer's PII) -- window.open can't attach that
+  // header to a plain navigation, so this fetches it and writes the result
+  // into a new tab instead. The tab is opened synchronously, before the
+  // await, because opening it only after the fetch resolves loses the
+  // "trusted user gesture" the click carried (Safari revokes it on the very
+  // next microtask; Chrome is looser but not guaranteed either), and
+  // window.open silently returns null instead of a popup once that happens.
+  agreementLoadingId = '';
+  agreementError = '';
+  agreementErrorBookingId = '';
+  async viewRentalAgreement(booking: any) {
+    this.agreementError = '';
+    this.agreementLoadingId = booking.id;
+    const tab = window.open('', '_blank');
+    if (!tab) {
+      this.agreementError = 'Your browser blocked the new tab. Please allow pop-ups for this site and try again.';
+      this.agreementErrorBookingId = booking.id;
+      this.agreementLoadingId = '';
+      return;
+    }
+    tab.document.write('Loading agreement…');
+    try {
+      const response = await fetch(`${this.api}/admin/bookings/${encodeURIComponent(booking.id)}/agreement`, {
+        headers: { Authorization: `Bearer ${this.adminToken}` }
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        this.agreementError = body.error || 'Could not open the agreement.';
+        this.agreementErrorBookingId = booking.id;
+        tab.close();
+        return;
+      }
+      const html = await response.text();
+      tab.document.open();
+      tab.document.write(html);
+      tab.document.close();
+    } catch {
+      this.agreementError = 'Network error. Please try again.';
+      this.agreementErrorBookingId = booking.id;
+      tab.close();
+    } finally {
+      this.agreementLoadingId = '';
+    }
+  }
+
   pickVenueGalleryMedia(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (!file) return;
@@ -1398,12 +1537,20 @@ export class AppComponent implements OnInit {
     this.venueGalleryTourSaving = false;
   }
   async login() {
+    if (this.adminLoginSubmitting) return;
     this.adminError = '';
-    const response = await fetch(`${this.api}/admin/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: this.adminEmail, password: this.adminPassword }) });
-    const body = await response.json();
-    if (!response.ok) { this.adminError = body.error || 'Could not sign in.'; return; }
-    this.adminToken = body.token; sessionStorage.setItem('fairview_admin_token', body.token); this.adminAuthProvider = body.provider || 'password'; sessionStorage.setItem('fairview_admin_provider', this.adminAuthProvider); this.adminPassword = '';
-    void this.loadInquiries();
+    this.adminLoginSubmitting = true;
+    try {
+      const response = await fetch(`${this.api}/admin/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: this.adminEmail, password: this.adminPassword }) });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) { this.adminError = body.error || 'Could not sign in.'; return; }
+      this.adminToken = body.token; sessionStorage.setItem('fairview_admin_token', body.token); this.adminAuthProvider = body.provider || 'password'; sessionStorage.setItem('fairview_admin_provider', this.adminAuthProvider); this.adminPassword = '';
+      void this.loadInquiries();
+    } catch {
+      this.adminError = 'Network error. Please try again.';
+    } finally {
+      this.adminLoginSubmitting = false;
+    }
   }
   async googleLogin(token: string) {
     this.adminError = '';

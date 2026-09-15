@@ -71,7 +71,24 @@
 
   <app-about *ngIf="activeSection === 'about'" [content]="content.about" (contactClick)="goToSection('contact')"></app-about>
 
-  <section id="contact" class="contact" *ngIf="activeSection === 'contact'"><p class="eyebrow">{{ content.contact.eyebrow }}</p><h2>{{ content.contact.heading }}</h2><a [href]="'mailto:' + content.contact.email" class="contact-link">{{ content.contact.email }} <span>↗</span></a></section>
+  <section id="contact" class="contact" *ngIf="activeSection === 'contact'">
+    <p class="eyebrow">{{ content.contact.eyebrow }}</p>
+    <h2>{{ content.contact.heading }}</h2>
+    <form class="contact-form" (ngSubmit)="submitContactForm()">
+      <div class="two-up">
+        <label>Name<input type="text" name="contactName" [(ngModel)]="contactForm.name" required></label>
+        <label>Email<input type="email" name="contactEmail" [(ngModel)]="contactForm.email" required></label>
+      </div>
+      <label>What's this about?<select name="contactService" [(ngModel)]="contactForm.service">
+        <option *ngFor="let option of contactServiceOptions" [value]="option">{{ option }}</option>
+      </select></label>
+      <label>Message<textarea name="contactMessage" [(ngModel)]="contactForm.message" placeholder="Tell us about your event, headcount, and timing." required></textarea></label>
+      <button class="underlined" type="submit" [disabled]="contactSubmitting">{{ contactSubmitting ? 'Sending…' : 'Send message' }} <span>↗</span></button>
+      <p class="form-success" *ngIf="contactFormSuccess">{{ contactFormSuccess }}</p>
+      <p class="error" *ngIf="contactFormError">{{ contactFormError }}</p>
+    </form>
+    <a [href]="'mailto:' + content.contact.email" class="contact-link">Prefer email? Write to us at {{ content.contact.email }} <span>↗</span></a>
+  </section>
 </main>
 
 <div class="admin-modal-backdrop" *ngIf="adminOpen" (click)="closeAdmin()">
@@ -84,6 +101,12 @@
     <div *ngIf="!adminToken" class="login-card admin-login-card">
       <p>Sign in to manage the site and publish gallery items.</p>
       <div id="google-signin-button" style="margin: 20px 0 0; text-align: center;"></div>
+      <div class="login-divider"><span>or</span></div>
+      <form (ngSubmit)="login()">
+        <label>Email<input type="email" name="adminLoginEmail" [(ngModel)]="adminEmail" required autocomplete="username"></label>
+        <label>Password<input type="password" name="adminLoginPassword" [(ngModel)]="adminPassword" required autocomplete="current-password"></label>
+        <button class="publish" type="submit" [disabled]="adminLoginSubmitting">{{ adminLoginSubmitting ? 'Signing in…' : 'Sign in' }} <span>→</span></button>
+      </form>
       <p class="error" *ngIf="adminError">{{adminError}}</p>
     </div>
 
@@ -252,19 +275,35 @@
           <button class="publish" type="submit" [disabled]="!venueGalleryUploadFile || venueGalleryUploading">{{ venueGalleryUploading ? 'Uploading…' : 'Add to gallery' }} <span>→</span></button>
           <p class="error" *ngIf="venueGalleryError">{{ venueGalleryError }}</p>
         </form>
-        <div class="admin-note" *ngIf="venueGalleryCategoryMedia.length">
+        <div class="gallery-published" *ngIf="venueGalleryCategoryMedia.length">
           <h4>Published photos and videos</h4>
-          <div class="two-up" *ngFor="let item of venueGalleryCategoryMedia; trackBy: trackByGalleryItem">
-            <span>{{ item.title }} <b *ngIf="item.mediaType === 'video'">· Video</b></span>
-            <button type="button" class="underlined" (click)="deleteVenueGalleryMedia(item)">Delete</button>
+          <div class="gallery-published-grid">
+            <div class="gallery-published-item" *ngFor="let item of venueGalleryCategoryMedia; trackBy: trackByGalleryItem">
+              <div class="gallery-published-thumb">
+                <img *ngIf="item.mediaType === 'image'" [src]="item.image" [alt]="item.title">
+                <video *ngIf="item.mediaType === 'video'" [src]="item.image" muted preload="metadata"></video>
+                <b *ngIf="item.mediaType === 'video'" class="gallery-published-badge">Video</b>
+              </div>
+              <div class="gallery-published-info">
+                <span>{{ item.title }}</span>
+                <button type="button" class="underlined" (click)="deleteVenueGalleryMedia(item)">Delete</button>
+              </div>
+            </div>
           </div>
         </div>
 
-        <h4>Virtual tour</h4>
-        <label>Embed URL (Matterport, YouTube, etc.)
-          <input [(ngModel)]="venueGalleryTourUrl" name="venueGalleryTourUrl" type="url" placeholder="https://my.matterport.com/show/?m=...">
-        </label>
-        <button type="button" class="underlined" [disabled]="venueGalleryTourSaving" (click)="saveVenueGalleryTour()">{{ venueGalleryTourSaving ? 'Saving…' : 'Save tour link' }}</button>
+        <fieldset class="admin-card admin-virtual-tour">
+          <legend>Virtual tour</legend>
+          <label>Embed URL (Matterport, YouTube, etc.)
+            <input [(ngModel)]="venueGalleryTourUrl" name="venueGalleryTourUrl" type="url" placeholder="https://my.matterport.com/show/?m=...">
+          </label>
+          <button type="button" class="underlined" [disabled]="venueGalleryTourSaving" (click)="saveVenueGalleryTour()">{{ venueGalleryTourSaving ? 'Saving…' : 'Save tour link' }}</button>
+          <div class="tour-preview" *ngIf="safeVenueGalleryTourUrl">
+            <span class="tour-preview-label">Preview</span>
+            <iframe [src]="safeVenueGalleryTourUrl" title="Virtual tour preview" allow="fullscreen; xr-spatial-tracking" allowfullscreen loading="lazy"></iframe>
+          </div>
+          <p class="admin-card-hint" *ngIf="venueGalleryTourUrl && !safeVenueGalleryTourUrl">Only https:// embed links can be previewed or published.</p>
+        </fieldset>
         <button type="button" class="underlined signout" (click)="logout()">Sign out</button>
       </section>
 
@@ -299,6 +338,25 @@
       </section>
 
       <section class="admin-inquiries" *ngIf="adminView === 'bookings'">
+        <fieldset class="admin-card admin-pricing">
+          <legend>Rental fee &amp; reservation fee</legend>
+          <p class="admin-card-hint">
+            The reservation fee is paid online, up front, on top of the rental fee -- not a prepayment against it
+            (matching the paper Rental Agreement's non-refundable Reservation Fee). Applies to days published from
+            here on; a day that's already open or booked keeps the fees it was created with.
+          </p>
+          <div class="two-up">
+            <label>Rental fee (USD)<input type="number" min="1" step="1" [(ngModel)]="bookingPricing.sessionFee" name="pricingSessionFee"></label>
+            <label>Reservation fee (USD)<input type="number" min="1" max="1000" step="1" [(ngModel)]="bookingPricing.reservationFee" name="pricingReservationFee"></label>
+          </div>
+          <p class="admin-pricing-preview" *ngIf="bookingPricing.sessionFee && bookingPricing.reservationFee">
+            A booking today would collect a {{ formatMoney(bookingPricing.reservationFee * 100) }} reservation fee now, with the {{ formatMoney(bookingPricing.sessionFee * 100) }} rental fee due 15 days before the event.
+          </p>
+          <button type="button" class="publish" [disabled]="bookingPricingSaving" (click)="saveBookingPricing()">{{ bookingPricingSaving ? 'Saving…' : 'Save pricing' }} <span>→</span></button>
+          <p class="admin-inquiries-meta" *ngIf="bookingPricingNotice">{{ bookingPricingNotice }}</p>
+          <p class="error" *ngIf="bookingPricingError">{{ bookingPricingError }}</p>
+        </fieldset>
+
         <p class="admin-inquiries-meta">Record a manual booking (phone, cash, walk-in)</p>
         <div class="admin-inquiries-tools admin-booking-tools">
           <label>Date<input type="date" [(ngModel)]="newManualBooking.date" name="manualDate"></label>
@@ -306,12 +364,15 @@
           <label>Customer name<input type="text" [(ngModel)]="newManualBooking.name" name="manualName"></label>
           <label>Email <span class="optional">optional</span><input type="email" [(ngModel)]="newManualBooking.email" name="manualEmail"></label>
           <label>Phone <span class="optional">optional</span><input type="tel" [(ngModel)]="newManualBooking.phone" name="manualPhone"></label>
+          <label>Mailing address <span class="optional">optional, for the rental agreement</span><input type="text" [(ngModel)]="newManualBooking.address" name="manualAddress" placeholder="Street, city, state, ZIP"></label>
+          <label>Event description <span class="optional">optional</span><input type="text" [(ngModel)]="newManualBooking.eventDescription" name="manualEventDescription" placeholder="e.g. Wedding reception"></label>
+          <label>Guests planned <span class="optional">optional</span><input type="number" min="0" [(ngModel)]="newManualBooking.guestCount" name="manualGuestCount"></label>
           <button type="button" class="underlined" [disabled]="manualBookingSubmitting" (click)="createManualBooking()">{{ manualBookingSubmitting ? 'Recording…' : 'Record booking +' }}</button>
           <button type="button" class="underlined" (click)="setAdminView('bookings')">Refresh <span>&#8635;</span></button>
         </div>
         <p class="admin-block-hint">
-          Takes the day immediately as a confirmed booking at the standard $1,200 event space rate -- no deposit
-          is collected through the site, so use this only for a reservation already agreed by phone, cash, or in
+          Takes the day immediately as a confirmed booking at the standard {{ formatMoney(bookingPricing.sessionFee * 100) }} event space rate -- no reservation
+          fee is collected through the site, so use this only for a reservation already agreed by phone, cash, or in
           person. A block does not stop this. Days are bookable online by default; use Block below to close a day off.
         </p>
 
@@ -399,15 +460,17 @@
               <span *ngIf="booking.phone"> &middot; {{ booking.phone }}</span>
             </p>
             <p class="inquiry-card-message">
-              Deposit {{ formatMoney(booking.deposit) }} paid &middot; balance {{ formatMoney(booking.balanceDue) }} due.
+              Reservation fee {{ formatMoney(booking.deposit) }} paid &middot; rental fee {{ formatMoney(booking.balanceDue) }} due 15 days before the event.
               <span *ngIf="booking.agreedTime">Agreed time: {{ booking.agreedTime }}.</span>
               <span *ngIf="booking.notes"> {{ booking.notes }}</span>
             </p>
             <div class="inquiry-card-foot" *ngIf="booking.status === 'confirmed'">
               <label>Agreed time<input type="text" [ngModel]="booking.agreedTime" (ngModelChange)="saveAgreedTime(booking, $event)" [name]="'agreed-' + booking.id" placeholder="07:30"></label>
               <span class="inquiry-delivery" [class.ok]="booking.refundable">{{ booking.refundable ? 'Refundable' : 'Past refund window' }}</span>
+              <button type="button" class="underlined" (click)="viewRentalAgreement(booking)" [disabled]="agreementLoadingId === booking.id">{{ agreementLoadingId === booking.id ? 'Opening…' : 'View agreement' }}</button>
               <button type="button" class="underlined" (click)="cancelBooking(booking)">Cancel booking</button>
             </div>
+            <p class="error" *ngIf="agreementError && agreementErrorBookingId === booking.id">{{ agreementError }}</p>
           </article>
         </div>
         <p class="admin-inquiries-empty" *ngIf="!adminBookingLoading && !adminBookings.length">No bookings yet.</p>
