@@ -122,7 +122,10 @@
 <div class="admin-modal-backdrop" *ngIf="adminOpen" (click)="closeAdmin()">
   <aside class="admin-modal" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" aria-label="Admin studio">
     <div class="admin-modal-head">
-      <h3>{{ adminToken ? 'Manage site' : 'Admin login' }}</h3>
+      <div>
+        <h3>{{ adminToken ? 'Manage site' : 'Admin login' }}</h3>
+        <p class="admin-signed-in-as" *ngIf="adminToken && signedInAdminEmail">Signed in as {{ signedInAdminEmail }}</p>
+      </div>
       <button type="button" (click)="closeAdmin()" aria-label="Close admin panel">×</button>
     </div>
 

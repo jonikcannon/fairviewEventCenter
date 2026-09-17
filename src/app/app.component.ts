@@ -117,6 +117,10 @@ export class AppComponent implements OnInit {
   adminLoginSubmitting = false;
   adminToken = sessionStorage.getItem('fairview_admin_token') || '';
   adminAuthProvider = sessionStorage.getItem('fairview_admin_provider') || '';
+  // Shown in the admin panel header once signed in -- mainly useful now that
+  // more than one Google account can be an admin, so it's clear which one is
+  // active.
+  signedInAdminEmail = sessionStorage.getItem('fairview_admin_email') || '';
   adminError = '';
   contentSaving = false;
   contentMediaUploading: Record<string, boolean> = {};
@@ -1620,6 +1624,7 @@ export class AppComponent implements OnInit {
       const body = await response.json().catch(() => ({}));
       if (!response.ok) { this.adminError = body.error || 'Could not sign in.'; return; }
       this.adminToken = body.token; sessionStorage.setItem('fairview_admin_token', body.token); this.adminAuthProvider = body.provider || 'password'; sessionStorage.setItem('fairview_admin_provider', this.adminAuthProvider); this.adminPassword = '';
+      this.signedInAdminEmail = this.adminEmail; sessionStorage.setItem('fairview_admin_email', this.signedInAdminEmail);
       void this.loadInquiries();
     } catch {
       this.adminError = 'Network error. Please try again.';
@@ -1637,6 +1642,8 @@ export class AppComponent implements OnInit {
       this.adminAuthProvider = body.provider || 'google';
       sessionStorage.setItem('fairview_admin_token', body.token);
       sessionStorage.setItem('fairview_admin_provider', this.adminAuthProvider);
+      this.signedInAdminEmail = String(body.email || '');
+      sessionStorage.setItem('fairview_admin_email', this.signedInAdminEmail);
       void this.loadInquiries();
       this.changeDetector.markForCheck();
     } catch (err) {
@@ -1647,10 +1654,12 @@ export class AppComponent implements OnInit {
   logout() {
     this.adminToken = '';
     this.adminAuthProvider = '';
+    this.signedInAdminEmail = '';
     this.inquiries = [];
     this.inquiriesError = '';
     sessionStorage.removeItem('fairview_admin_token');
     sessionStorage.removeItem('fairview_admin_provider');
+    sessionStorage.removeItem('fairview_admin_email');
   }
   async loadInquiries() {
     if (!this.adminToken) return;

@@ -841,6 +841,17 @@ app.post('/api/admin/login', rateLimit({ windowMs: 900000, max: 8, message: { er
   });
 });
 
+// Everyone allowed to sign in with Google: ADMIN_GOOGLE_EMAILS (comma-separated)
+// plus ADMIN_EMAIL itself, so the original single-admin setup keeps working
+// with zero config changes -- ADMIN_GOOGLE_EMAILS only needs to be set once a
+// second (or third...) Gmail account should also get in. Case-insensitive
+// since Gmail addresses are effectively case-insensitive.
+function allowedGoogleAdminEmails() {
+  const extra = String(process.env.ADMIN_GOOGLE_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+  const primary = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+  return new Set(primary ? [primary, ...extra] : extra);
+}
+
 app.post('/api/admin/google-login', rateLimit({ windowMs: 900000, max: 15, message: { error: 'Too many attempts. Try again later.' } }), async (req, res) => {
   const { token } = req.body || {};
   if (!token) return res.status(400).json({ error: 'Google token required.' });
@@ -854,7 +865,7 @@ app.post('/api/admin/google-login', rateLimit({ windowMs: 900000, max: 15, messa
     });
 
     const payload = ticket.getPayload();
-    if (!payload || payload.email !== process.env.ADMIN_EMAIL) {
+    if (!payload?.email || !allowedGoogleAdminEmails().has(String(payload.email).toLowerCase())) {
       return res.status(403).json({ error: 'Access denied. Not authorized.' });
     }
 

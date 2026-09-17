@@ -180,8 +180,10 @@ project's client ID**, since it's scoped to specific approved domains.
    a new project (top-left project picker → New Project).
 2. **APIs & Services → OAuth consent screen.** Choose **External**, fill in an
    app name and support email, and publish it (or leave it in Testing mode and
-   add the admin's Google account under **Test users** — fine for a
-   single-admin site).
+   add each admin's Google account under **Test users** — fine for a small
+   number of admins; while in Testing mode, an account that isn't listed here
+   is rejected by Google itself before it ever reaches this site's code, no
+   matter what `ADMIN_GOOGLE_EMAILS` below says).
 3. **APIs & Services → Credentials → Create Credentials → OAuth client ID.**
    - Application type: **Web application**
    - Authorized JavaScript origins: `https://your-domain.com` (add
@@ -204,6 +206,23 @@ directly (and redeployed) whenever a client wants their own:
 Replace the existing ID in all three spots with your new one. If you're not
 comfortable editing these yourself, pass this whole section to whoever is
 deploying the site — it's a five-minute change.
+
+### Adding more admins
+
+The Client ID above identifies *this website* to Google, not any one person —
+any Google account can sign in through it, subject to two separate checks:
+
+1. **Google's own gate**: while the OAuth consent screen (step 2) is in
+   Testing mode, the account must be added as a **Test user** there, or
+   Google refuses to complete sign-in at all, before this site sees anything.
+2. **This site's gate**: `.env`'s `ADMIN_GOOGLE_EMAILS` — a comma-separated
+   list of Gmail addresses allowed in, e.g.
+   `ADMIN_GOOGLE_EMAILS=jane@gmail.com,bob@gmail.com`. `ADMIN_EMAIL` (below)
+   is always allowed and doesn't need to be repeated here.
+
+Both checks have to pass. A new admin needs their account added in both
+places (or the consent screen published/verified, which removes the Test
+user requirement entirely).
 
 ### The fallback login
 
