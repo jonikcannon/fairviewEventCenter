@@ -7,11 +7,13 @@ export type BookingSlot = {
   /** Calendar day, YYYY-MM-DD. Bookings are whole days: at most one slot exists per date. */
   date: string;
   location: string;
-  /** All money is in cents, matching the API. Always the flat event-space rate. */
-  sessionFee: number;
-  deposit: number;
-  balanceDue: number;
 };
+
+/** A whole-day rate-schedule package the customer picks (see bookingStore.listBookablePackages). */
+export type BookingPackage = { id: string; name: string; detail: string; priceCents: number };
+
+/** An optional extra, priced from an About page feature (see bookingStore.listAddOns). */
+export type BookingAddOn = { id: string; name: string; priceCents: number };
 
 export type BookingRequest = {
   slotId: string;
@@ -22,13 +24,15 @@ export type BookingRequest = {
   address: string;
   eventDescription: string;
   guestCount: string;
+  packageId: string;
+  addOnIds: string[];
 };
 
 /**
  * A date with no slot yet, reserved on request. There is no existing slot to
- * hold against, so the server creates one on demand at the flat event-space
- * rate -- but the checkout itself is the same Stripe deposit flow as booking
- * a date that already has a slot.
+ * hold against, so the server creates one on demand -- but the checkout
+ * itself is the same Stripe deposit flow as booking a date that already has
+ * a slot.
  */
 export type BookingDateRequest = {
   date: string;
@@ -39,6 +43,8 @@ export type BookingDateRequest = {
   address: string;
   eventDescription: string;
   guestCount: string;
+  packageId: string;
+  addOnIds: string[];
 };
 
 @Component({
@@ -66,6 +72,9 @@ export class BookingComponent {
   @Input() refundPolicy = '';
   @Input() holdMinutes = 15;
   @Input() requestSubmitting = false;
+  @Input() packages: BookingPackage[] = [];
+  @Input() addOns: BookingAddOn[] = [];
+  @Input() reservationFeeCents = 0;
   @Output() book = new EventEmitter<BookingRequest>();
   @Output() enquire = new EventEmitter<void>();
   @Output() requestDate = new EventEmitter<BookingDateRequest>();
@@ -80,6 +89,37 @@ export class BookingComponent {
 
   requestDateInput = '';
   requestForm = { name: '', email: '', phone: '', notes: '', address: '', eventDescription: '', guestCount: '' };
+
+  // Shared by both the direct-slot and request-a-date forms: only one is ever
+  // visible at a time (see select()/selectRequestDate()), and picking a
+  // package is independent of which date is chosen, so there's no need for
+  // two copies of this state.
+  selectedPackageId = '';
+  selectedAddOnIds: string[] = [];
+
+  get selectedPackage(): BookingPackage | null {
+    return this.packages.find(pkg => pkg.id === this.selectedPackageId) || null;
+  }
+
+  get selectedAddOns(): BookingAddOn[] {
+    return this.addOns.filter(addOn => this.selectedAddOnIds.includes(addOn.id));
+  }
+
+  get rentalFeeCents(): number {
+    const packagePrice = this.selectedPackage?.priceCents || 0;
+    const addOnsTotal = this.selectedAddOns.reduce((sum, addOn) => sum + addOn.priceCents, 0);
+    return packagePrice + addOnsTotal;
+  }
+
+  selectPackage(packageId: string) {
+    this.selectedPackageId = packageId;
+  }
+
+  toggleAddOn(addOnId: string) {
+    const next = new Set(this.selectedAddOnIds);
+    if (next.has(addOnId)) next.delete(addOnId); else next.add(addOnId);
+    this.selectedAddOnIds = Array.from(next);
+  }
 
   // Nothing has a slot anywhere yet. Only drives the "No days are open..."
   // banner text; it no longer gates whether a date is clickable (see
@@ -269,6 +309,10 @@ export class BookingComponent {
       this.formError = 'Please enter a valid email address.';
       return;
     }
+    if (!this.selectedPackageId) {
+      this.formError = 'Please choose a package.';
+      return;
+    }
     this.formError = '';
     // Not cleared here: this is a paid checkout redirect, not a fire-and-forget
     // lead, so on failure the parent leaves this component's inputs unchanged
@@ -281,7 +325,9 @@ export class BookingComponent {
       notes: this.requestForm.notes.trim(),
       address: this.requestForm.address.trim(),
       eventDescription: this.requestForm.eventDescription.trim(),
-      guestCount: this.requestForm.guestCount.trim()
+      guestCount: this.requestForm.guestCount.trim(),
+      packageId: this.selectedPackageId,
+      addOnIds: this.selectedAddOnIds
     });
   }
 
@@ -318,6 +364,10 @@ export class BookingComponent {
       this.formError = 'Please enter a valid email address.';
       return;
     }
+    if (!this.selectedPackageId) {
+      this.formError = 'Please choose a package.';
+      return;
+    }
     this.formError = '';
     this.book.emit({
       slotId: slot.id,
@@ -327,7 +377,9 @@ export class BookingComponent {
       notes: this.form.notes.trim(),
       address: this.form.address.trim(),
       eventDescription: this.form.eventDescription.trim(),
-      guestCount: this.form.guestCount.trim()
+      guestCount: this.form.guestCount.trim(),
+      packageId: this.selectedPackageId,
+      addOnIds: this.selectedAddOnIds
     });
   }
 

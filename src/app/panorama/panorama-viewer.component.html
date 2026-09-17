@@ -1,0 +1,25 @@
+<div
+  class="pano-viewport"
+  #viewport
+  [class.dragging]="dragging"
+  (pointerdown)="onPointerDown($event)"
+  (pointermove)="onPointerMove($event)"
+  (pointerup)="onPointerUp($event)"
+  (pointercancel)="onPointerUp($event)"
+  (wheel)="onWheel($event)"
+  (dblclick)="resetView()">
+  <img
+    #image
+    [src]="imageUrl"
+    [alt]="alt"
+    draggable="false"
+    (load)="onImageLoad()"
+    [style.width.px]="displayWidth"
+    [style.height.px]="displayHeight"
+    [style.transform]="imageTransform">
+  <p class="pano-hint" *ngIf="!hasInteracted">Drag to look around</p>
+  <div class="pano-zoom">
+    <button type="button" (click)="zoomOut()" aria-label="Zoom out">−</button>
+    <button type="button" (click)="zoomIn()" aria-label="Zoom in">+</button>
+  </div>
+</div>

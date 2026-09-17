@@ -1,5 +1,6 @@
-// Self-serve DAY booking: one product -- the event space, flat rate, 9am-10pm
-// -- deposit-confirmed. Every future day is bookable by default; picking one
+// Self-serve DAY booking: the event space, 9am-10pm, priced by whichever
+// rate-schedule package (and add-ons) the customer picks -- deposit-confirmed.
+// Every future day is bookable by default; picking one
 // creates a slot (if it doesn't already exist) and a client pays a deposit ->
 // the Stripe webhook confirms it. There is exactly one slot per calendar
 // date, so once it is booked (or even just held while someone is on the
@@ -21,13 +22,13 @@
 const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
+const siteContent = require('./content');
 
 const bookingDir = path.join(__dirname, '../storage/bookings');
 const slotsFile = path.join(bookingDir, 'slots.jsonl');
 const bookingsFile = path.join(bookingDir, 'bookings.jsonl');
 const blocksFile = path.join(bookingDir, 'blocks.jsonl');
 const unblocksFile = path.join(bookingDir, 'unblocks.jsonl');
-const pricingFile = path.join(bookingDir, 'pricing.json');
 
 const SLOT = Object.freeze({ OPEN: 'open', HELD: 'held', BOOKED: 'booked', BLOCKED: 'blocked' });
 const BOOKING = Object.freeze({ PENDING: 'pending', CONFIRMED: 'confirmed', CANCELLED: 'cancelled', EXPIRED: 'expired' });
@@ -48,79 +49,87 @@ const MAX_PUBLISH_RANGE_DAYS = 62;
 // admin's problem to move by hand.
 const WEEKDAY_NAMES = Object.freeze(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
 
-// The reservation fee is a flat amount charged at booking time -- separate
-// from (added on top of, not a prepayment against) the rental fee, matching
-// the paper Rental Agreement: a $100 non-refundable Reservation Fee due at
-// signing, with the full rental fee due 15 days before the event. These are
-// the fallbacks when no admin override has ever been saved (see
-// readPricingOverrides/setPricingSettings).
+// Pricing now comes entirely from the public Rate Schedule (content.rates.items)
+// and the About page's optional feature prices (content.about.features[].price)
+// -- there is no separate admin-editable flat fee anymore. These are only the
+// last-resort fallbacks if the rate schedule is ever empty/unparseable, so a
+// booking never fails outright for lack of a price.
 const DEFAULT_RESERVATION_FEE_CENTS = 10000;
 const DEFAULT_SESSION_FEE_CENTS = 120000;
-const MIN_SESSION_FEE_CENTS = 100; // $1 -- a hard floor against a fat-fingered $0 fee
-const MAX_SESSION_FEE_CENTS = 100000000; // $1,000,000 -- generous, just a sanity cap
-const MIN_RESERVATION_FEE_CENTS = 100; // $1
-const MAX_RESERVATION_FEE_CENTS = 100000; // $1,000 -- generous, just a sanity cap
-
-// Admin-editable fee/deposit, persisted here rather than in content.js: this
-// is booking-engine configuration (read on every hold/manual-booking), not
-// public site copy, so it lives with the rest of the booking store.
-function readPricingOverrides() {
-  if (!fs.existsSync(pricingFile)) return {};
-  try {
-    const parsed = JSON.parse(fs.readFileSync(pricingFile, 'utf8'));
-    return isPlainObject(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-}
 
 function isPlainObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-// There is exactly one thing to book -- the event space, for the whole day,
-// 9am-10pm -- at one flat rate. Resolution order: an admin-saved override
-// (storage/bookings/pricing.json) beats the env var (deploy-time default,
-// still useful for a first-run/no-admin-action-yet setup), which beats the
-// hardcoded default.
-function eventSpaceFee() {
-  const overrides = readPricingOverrides();
-  if (Number.isFinite(overrides.sessionFeeCents) && overrides.sessionFeeCents > 0) return Math.round(overrides.sessionFeeCents);
-  const configured = Number(process.env.EVENT_SPACE_FEE_CENTS);
-  return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : DEFAULT_SESSION_FEE_CENTS;
+// "$1,200.00" -> 120000, "$125.00/hour" -> 12500. Only the first dollar
+// amount is used; a unit suffix like "/hour" is not modeled here (see
+// listBookablePackages, which excludes per-unit items rather than guessing a
+// quantity for them). Returns null when no amount can be found.
+function parseMoneyToCents(text) {
+  const match = String(text || '').match(/\$\s*([\d,]+(?:\.\d{1,2})?)/);
+  if (!match) return null;
+  const dollars = Number(match[1].replace(/,/g, ''));
+  return Number.isFinite(dollars) ? Math.round(dollars * 100) : null;
 }
 
+function slugify(value) {
+  return String(value || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// The whole-day packages a customer can choose when booking a date (Standard
+// Package Morning/Evening/All Day, etc.) -- every rate-schedule item that has
+// a category (the ungrouped "Refundable Rental Deposit" line is the
+// reservation fee, not a package -- see reservationFee()) and a flat price
+// (no "/hour"-style unit, since a day-long booking has no quantity to attach
+// an hourly rate to).
+function listBookablePackages() {
+  const items = siteContent.readContent().rates.items || [];
+  return items
+    .filter(item => item.category && !/\/\s*[a-z]/i.test(item.price))
+    .map(item => ({ id: slugify(item.name), name: item.name, detail: item.detail, priceCents: parseMoneyToCents(item.price) }))
+    .filter(item => item.id && Number.isFinite(item.priceCents) && item.priceCents > 0);
+}
+
+function findPackage(packageId) {
+  return listBookablePackages().find(pkg => pkg.id === String(packageId || '')) || null;
+}
+
+// Optional extras a customer can add to a booking -- any About page feature
+// an admin has given a price to (see about.features[].price). Features left
+// at their default blank price are part of the venue rental itself (shown as
+// "Included" on the About page), not a chargeable add-on.
+function listAddOns() {
+  const features = siteContent.readContent().about.features || [];
+  return features
+    .filter(feature => feature.price)
+    .map(feature => ({ id: slugify(feature.title), name: feature.title, priceCents: parseMoneyToCents(feature.price) }))
+    .filter(addOn => addOn.id && Number.isFinite(addOn.priceCents) && addOn.priceCents > 0);
+}
+
+// Resolves a customer's chosen add-on ids against the current list, dropping
+// anything unknown (stale id from a page loaded before an admin edited them)
+// rather than failing the whole booking over it.
+function resolveAddOns(addOnIds) {
+  const available = listAddOns();
+  const wanted = new Set((Array.isArray(addOnIds) ? addOnIds : []).map(String));
+  return available.filter(addOn => wanted.has(addOn.id));
+}
+
+// The one rate-schedule item with no category is the refundable deposit --
+// paid on top of the rental fee, not a prepayment against it (see
+// publicSlot's balanceDue comment).
 function reservationFee() {
-  const overrides = readPricingOverrides();
-  if (Number.isFinite(overrides.reservationFeeCents) && overrides.reservationFeeCents > 0) return Math.round(overrides.reservationFeeCents);
-  return DEFAULT_RESERVATION_FEE_CENTS;
+  const items = siteContent.readContent().rates.items || [];
+  const depositItem = items.find(item => !item.category);
+  const cents = depositItem ? parseMoneyToCents(depositItem.price) : null;
+  return Number.isFinite(cents) && cents > 0 ? cents : DEFAULT_RESERVATION_FEE_CENTS;
 }
 
-// Named `depositFor` (rather than reservationFee directly) because callers
-// pass the slot's sessionFee and the field is still called `deposit`
-// everywhere it's stored/displayed -- but the amount itself is now a flat
-// fee, unrelated to the session fee it's paid alongside.
+// Named `depositFor` for historical reasons (the field is still called
+// `deposit` everywhere it's stored/displayed) -- the amount itself no longer
+// depends on the session fee it's paid alongside.
 function depositFor(_sessionFee) {
   return reservationFee();
-}
-
-// Resolved current pricing, for the admin panel to display and edit.
-function getPricingSettings() {
-  return { sessionFeeCents: eventSpaceFee(), reservationFeeCents: reservationFee() };
-}
-
-function setPricingSettings({ sessionFeeCents, reservationFeeCents }) {
-  const fee = Math.round(Number(sessionFeeCents));
-  if (!Number.isFinite(fee) || fee < MIN_SESSION_FEE_CENTS || fee > MAX_SESSION_FEE_CENTS) {
-    throw new Error(`Session fee must be between $${MIN_SESSION_FEE_CENTS / 100} and $${MAX_SESSION_FEE_CENTS / 100}.`);
-  }
-  const reservation = Math.round(Number(reservationFeeCents));
-  if (!Number.isFinite(reservation) || reservation < MIN_RESERVATION_FEE_CENTS || reservation > MAX_RESERVATION_FEE_CENTS) {
-    throw new Error(`Reservation fee must be between $${MIN_RESERVATION_FEE_CENTS / 100} and $${MAX_RESERVATION_FEE_CENTS / 100}.`);
-  }
-  ensureStore();
-  fs.writeFileSync(pricingFile, JSON.stringify({ sessionFeeCents: fee, reservationFeeCents: reservation }, null, 2), 'utf8');
-  return { sessionFeeCents: fee, reservationFeeCents: reservation };
 }
 
 function holdMinutes() {
@@ -387,17 +396,16 @@ function slotIsBlocked(slot, blocks, unblocks) {
   return isBlocked(slot.date, blocks, unblocks);
 }
 
+// A day no longer has one fixed price -- the rental fee depends on which
+// package the customer picks when they hold it (see holdSlot). The public
+// listing is just "this day is open"; listBookablePackages()/reservationFee()
+// (surfaced alongside this list in server.js) are what the booking form
+// prices its live quote from as the customer picks a package and add-ons.
 function publicSlot(slot) {
-  const deposit = depositFor(slot.sessionFee);
   return {
     id: slot.id,
     date: slot.date,
-    location: slot.location || '',
-    sessionFee: slot.sessionFee,
-    deposit,
-    // The reservation fee is paid on top of the rental fee, not a prepayment
-    // against it (see reservationFee()) -- the full rental fee is still due.
-    balanceDue: slot.sessionFee
+    location: slot.location || ''
   };
 }
 
@@ -461,11 +469,12 @@ function findBooking(id) {
   return readBookings().find(booking => booking.id === String(id || '')) || null;
 }
 
-// Creates a slot for a date a visitor picked, priced at the flat event-space
-// rate, and hands the id to holdSlot so the rest of the pipeline (hold,
-// Stripe checkout, webhook confirm, expiry sweep) runs unchanged. Still
-// checked against the admin's block rules: a deposit cannot provisionally
-// hold a date that is blocked.
+// Creates a bare slot for a date a visitor picked -- pricing is decided at
+// hold time by whichever package/add-ons they choose, not here -- and hands
+// the id to holdSlot so the rest of the pipeline (hold, Stripe checkout,
+// webhook confirm, expiry sweep) runs unchanged. Still checked against the
+// admin's block rules: a deposit cannot provisionally hold a date that is
+// blocked.
 //
 // Idempotent by date: if a slot already exists there -- an earlier request's
 // hold expired and returned it to OPEN, say -- that row is reused instead of
@@ -491,7 +500,6 @@ function createRequestedSlot({ date, location = '' }) {
   const slot = appendSlot({
     id: randomUUID(),
     date: day,
-    sessionFee: eventSpaceFee(),
     location: String(location || '').trim(),
     status: SLOT.OPEN,
     holdUntil: '',
@@ -504,7 +512,7 @@ function createRequestedSlot({ date, location = '' }) {
 
 // Read-modify-write with no await inside, so the open -> held transition cannot
 // interleave with another request in this process.
-function holdSlot(slotId, { name, email, phone = '', notes = '', address = '', eventDescription = '', guestCount = '' }) {
+function holdSlot(slotId, { name, email, phone = '', notes = '', address = '', eventDescription = '', guestCount = '', packageId = '', addOnIds = [] }) {
   releaseExpiredHolds();
   const slots = readSlots();
   const index = slots.findIndex(slot => slot.id === String(slotId || ''));
@@ -516,8 +524,13 @@ function holdSlot(slotId, { name, email, phone = '', notes = '', address = '', e
   // A page loaded before the admin added a block would still offer this day.
   if (slotIsBlocked(slot)) return { error: 'That day is no longer available. Please pick another.', status: 409 };
 
+  const chosenPackage = findPackage(packageId);
+  if (!chosenPackage) return { error: 'Please choose a package.', status: 400 };
+  const chosenAddOns = resolveAddOns(addOnIds);
+
   const now = new Date();
-  const deposit = depositFor(slot.sessionFee);
+  const deposit = reservationFee();
+  const sessionFee = chosenPackage.priceCents + chosenAddOns.reduce((sum, addOn) => sum + addOn.priceCents, 0);
   const guests = Math.max(0, Math.round(Number(guestCount) || 0));
   const booking = appendBooking({
     id: randomUUID(),
@@ -536,11 +549,16 @@ function holdSlot(slotId, { name, email, phone = '', notes = '', address = '', e
     eventDescription: String(eventDescription || '').trim().slice(0, 200),
     guestCount: guests || '',
     status: BOOKING.PENDING,
-    sessionFee: slot.sessionFee,
+    // The rate-schedule package (and any add-ons) chosen at booking time,
+    // frozen here just like the resulting price -- a later rate-schedule
+    // edit must not rewrite what this customer already agreed to pay.
+    packageName: chosenPackage.name,
+    addOns: chosenAddOns.map(addOn => ({ name: addOn.name, priceCents: addOn.priceCents })),
+    sessionFee,
     deposit,
     // The reservation fee is paid on top of the rental fee, not a prepayment
     // against it (see reservationFee()) -- the full rental fee is still due.
-    balanceDue: slot.sessionFee,
+    balanceDue: sessionFee,
     // Frozen at booking time: changing the policy later must not rewrite the
     // terms this customer accepted.
     refundPolicy: refundPolicyText(),
@@ -575,7 +593,7 @@ function holdSlot(slotId, { name, email, phone = '', notes = '', address = '', e
 // happened, possibly on what is normally a closed weekday, so their say-so
 // overrides it. The only real conflict is another booking (or an in-progress
 // hold) already sitting on that date.
-function createManualBooking({ date, location = '', name, email = '', phone = '', notes = '', address = '', eventDescription = '', guestCount = '' }) {
+function createManualBooking({ date, location = '', name, email = '', phone = '', notes = '', address = '', eventDescription = '', guestCount = '', packageId = '', addOnIds = [] }) {
   const day = String(date || '').trim();
   if (!DATE_PATTERN.test(day) || Number.isNaN(Date.parse(`${day}T00:00:00`))) {
     return { error: 'Date must be a calendar date in YYYY-MM-DD form.' };
@@ -584,6 +602,10 @@ function createManualBooking({ date, location = '', name, email = '', phone = ''
 
   const customerName = String(name || '').trim();
   if (customerName.length < 2) return { error: "Please enter the customer's name." };
+
+  const chosenPackage = findPackage(packageId);
+  if (!chosenPackage) return { error: 'Please choose a package.' };
+  const chosenAddOns = resolveAddOns(addOnIds);
 
   const slots = readSlots();
   const index = slots.findIndex(slot => slot.date === day);
@@ -594,8 +616,8 @@ function createManualBooking({ date, location = '', name, email = '', phone = ''
   const now = new Date();
   const nowIso = now.toISOString();
   const slotId = index >= 0 ? slots[index].id : randomUUID();
-  const fee = eventSpaceFee();
-  const deposit = depositFor(fee);
+  const deposit = reservationFee();
+  const fee = chosenPackage.priceCents + chosenAddOns.reduce((sum, addOn) => sum + addOn.priceCents, 0);
   const guests = Math.max(0, Math.round(Number(guestCount) || 0));
 
   const booking = appendBooking({
@@ -612,6 +634,8 @@ function createManualBooking({ date, location = '', name, email = '', phone = ''
     eventDescription: String(eventDescription || '').trim().slice(0, 200),
     guestCount: guests || '',
     status: BOOKING.CONFIRMED,
+    packageName: chosenPackage.name,
+    addOns: chosenAddOns.map(addOn => ({ name: addOn.name, priceCents: addOn.priceCents })),
     sessionFee: fee,
     deposit,
     // The reservation fee is paid on top of the rental fee, not a prepayment
@@ -632,7 +656,6 @@ function createManualBooking({ date, location = '', name, email = '', phone = ''
   const slotFields = {
     id: slotId,
     date: day,
-    sessionFee: fee,
     location: String(location || '').trim(),
     status: SLOT.BOOKED,
     holdUntil: '',
@@ -740,11 +763,10 @@ module.exports = {
   unblocksFile,
   WEEKDAY_NAMES,
   ensureStore,
-  eventSpaceFee,
   reservationFee,
   depositFor,
-  getPricingSettings,
-  setPricingSettings,
+  listBookablePackages,
+  listAddOns,
   holdMinutes,
   refundCutoffHours,
   refundPolicyText,

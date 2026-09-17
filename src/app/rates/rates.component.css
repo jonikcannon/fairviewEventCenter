@@ -1,0 +1,19 @@
+:host{display:block}
+.rates{text-align:center;background:var(--color-background);padding:120px 20px}
+.eyebrow{font-size:10px;letter-spacing:.2em;font-weight:bold;margin:0 0 25px}
+.rates h2{font-family:Georgia,'Times New Roman',serif;font-weight:400;letter-spacing:-.055em;margin:0;font-size:clamp(45px,6vw,80px);line-height:1.04}
+.rates-intro,.rates-empty{font-size:15px;line-height:1.65;max-width:480px;margin:28px auto}
+.rates-group{max-width:640px;margin:36px auto 0;text-align:left}
+.rates-group-heading{font-family:Georgia,'Times New Roman',serif;font-weight:400;font-size:20px;margin:0 0 6px}
+.rates-items{list-style:none;margin:0;padding:0;border-top:1px solid rgba(31,33,29,.2)}
+.rates-items li{display:flex;justify-content:space-between;align-items:baseline;gap:18px;padding:18px 0;border-bottom:1px solid rgba(31,33,29,.2)}
+.rates-item-info{display:flex;flex-direction:column;gap:4px}
+.rates-item-info b{font-family:Georgia,'Times New Roman',serif;font-weight:400;font-size:19px}
+.rates-item-info span{font-size:13px;color:var(--color-text);opacity:.75}
+.rates-item-price{font-size:15px;font-weight:bold;white-space:nowrap}
+.underlined{border:0;border-bottom:1px solid currentColor;background:none;padding:0 0 9px;color:inherit;font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:bold;cursor:pointer;text-decoration:none;display:inline-block;margin:0 14px}
+.underlined span{font-size:17px;margin-left:24px}
+@media(max-width:700px){
+  .rates{padding:75px 8vw}
+  .underlined{display:block;margin:20px auto 0}
+}

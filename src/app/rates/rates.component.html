@@ -1,0 +1,22 @@
+<section id="rates" class="rates">
+  <p class="eyebrow">{{ content.eyebrow }}</p>
+  <h2>{{ content.heading }}</h2>
+  <p class="rates-intro">{{ content.intro }}</p>
+
+  <div class="rates-group" *ngFor="let group of itemGroups">
+    <h3 class="rates-group-heading" *ngIf="group.category">{{ group.category }}</h3>
+    <ul class="rates-items">
+      <li *ngFor="let item of group.items">
+        <div class="rates-item-info">
+          <b>{{ item.name }}</b>
+          <span *ngIf="item.detail">{{ item.detail }}</span>
+        </div>
+        <span class="rates-item-price" *ngIf="item.price">{{ item.price }}</span>
+      </li>
+    </ul>
+  </div>
+
+  <a *ngIf="documentUrl" [href]="documentUrl" target="_blank" rel="noreferrer" class="underlined">Download full schedule <span>↗</span></a>
+  <p class="rates-empty" *ngIf="!content.items.length && !documentUrl">The current rate schedule isn't posted yet -- get in touch and we'll send you pricing.</p>
+  <button class="underlined" type="button" (click)="onContactClick()">Get in touch <span>↗</span></button>
+</section>

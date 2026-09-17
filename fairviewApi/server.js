@@ -16,7 +16,17 @@ const { Readable } = require('stream');
 const app = express();
 const port = process.env.PORT || 3500;
 const origin = process.env.CLIENT_ORIGIN || 'http://localhost:6200';
-const stripe = process.env.STRIPE_SECRET_KEY ? Stripe(process.env.STRIPE_SECRET_KEY) : null;
+const mockStripe = require('./mockStripe');
+// Mock mode only ever kicks in when there is no real key AND it was
+// explicitly requested -- so it's never accidentally active, and the moment
+// a real STRIPE_SECRET_KEY is added this branch stops being reachable.
+const useMockStripe = !process.env.STRIPE_SECRET_KEY && process.env.MOCK_STRIPE === 'true';
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? Stripe(process.env.STRIPE_SECRET_KEY)
+  : (useMockStripe ? mockStripe.createMockStripe({ baseUrl: `http://${process.env.BIND_HOST || '127.0.0.1'}:${process.env.PORT || 3500}` }) : null);
+if (useMockStripe) {
+  console.warn('MOCK_STRIPE is on: checkout uses a fake Stripe stand-in, not real payments. Unset MOCK_STRIPE (or set a real STRIPE_SECRET_KEY) before going live.');
+}
 
 const uploadsDir = path.join(__dirname, '../storage/uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -1209,7 +1219,15 @@ app.delete('/api/admin/venue-gallery/:category/:fileName', auth, (req, res) => {
 // assertMediaReference requires values to start with "assets/gallery/", and
 // the frontend's mediaUrl() is what resolves that relative path to the CDN
 // at render time (see AppComponent.heroVideo/heroPoster, AboutComponent).
-const SITE_MEDIA_SLOTS = new Set(['heroVideo', 'heroPoster', 'aboutPortrait', 'aboutFeature', 'siteLogo']);
+const SITE_MEDIA_SLOTS = new Set(['heroVideo', 'heroPoster', 'aboutPortrait', 'aboutFeature', 'siteLogo', 'ratesDocument', 'tourPanorama']);
+
+// The rate schedule is a document rather than an image/video, so it gets its
+// own mime-type allowlist instead of the isVideo/image branch below.
+const RATE_SCHEDULE_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+]);
 
 app.post('/api/admin/content-media', auth, async (req, res) => {
   const slot = String(req.body?.slot || '').trim();
@@ -1218,6 +1236,22 @@ app.post('/api/admin/content-media', auth, async (req, res) => {
   if (!media?.data || !media?.name || !media?.mimeType) {
     return res.status(400).json({ error: 'Media is required.' });
   }
+
+  if (slot === 'ratesDocument') {
+    if (!RATE_SCHEDULE_MIME_TYPES.has(media.mimeType)) {
+      return res.status(400).json({ error: 'The rate schedule must be a PDF or Word document.' });
+    }
+    try {
+      const ext = path.extname(media.name) || '.pdf';
+      const fileName = `ratesDocument-${randomUUID()}${ext}`;
+      await saveGalleryMediaFile('site', fileName, Buffer.from(media.data, 'base64'));
+      return res.status(201).json({ image: `assets/gallery/site/${encodeURIComponent(fileName)}` });
+    } catch (error) {
+      console.error('Rate schedule upload failed:', error);
+      return res.status(500).json({ error: 'Upload failed.' });
+    }
+  }
+
   const isVideo = media.mimeType.startsWith('video/');
   if (!isVideo && !media.mimeType.startsWith('image/')) {
     return res.status(400).json({ error: 'Only image or video files are supported.' });
@@ -1417,6 +1451,31 @@ app.post('/api/checkout/cart', async (req, res) => {
   res.json({ url: session.url });
 });
 
+// Fake hosted checkout page + "Pay" handler for MOCK_STRIPE mode (see
+// createMockStripe() above). Public/unauthenticated on purpose -- a real
+// visitor's browser lands here mid-checkout, same as it would on
+// checkout.stripe.com. Only reachable at all while MOCK_STRIPE is on, since
+// that's the only time a mock session could exist to look up.
+if (useMockStripe) {
+  app.get('/api/mock-checkout/:id', (req, res) => {
+    const session = mockStripe.getSession(req.params.id);
+    if (!session) return res.status(404).send('Mock checkout session not found or already completed.');
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(mockStripe.renderMockCheckoutPage(session));
+  });
+
+  app.post('/api/mock-checkout/:id/complete', async (req, res) => {
+    const session = mockStripe.markSessionComplete(req.params.id);
+    if (!session) return res.status(404).send('Mock checkout session not found.');
+    await handleCheckoutSessionCompleted(session);
+    // Not a 302: the CSP's form-action 'self' (see helmet() above) would block
+    // a form submission from being redirected to the frontend's origin. See
+    // renderRedirectPage's comment for why a 200 page works around this.
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(mockStripe.renderRedirectPage(session.success_url));
+  });
+}
+
 // ---------------------------------------------------------------- booking
 app.get('/api/booking/slots', (req, res) => {
   const from = String(req.query.from || '').trim();
@@ -1430,6 +1489,11 @@ app.get('/api/booking/slots', (req, res) => {
     bookedDates: bookingStore.listUnavailableDates({ from, to }),
     closedWeekdays: bookingStore.listClosedWeekdays(),
     unblockedDates: bookingStore.listUnblockedDates({ from, to }),
+    // Every open day is priced the same way -- by whichever package/add-ons
+    // the customer picks -- so these are global, not per-slot (see
+    // bookingStore.publicSlot's comment).
+    packages: bookingStore.listBookablePackages(),
+    addOns: bookingStore.listAddOns(),
     reservationFeeCents: bookingStore.reservationFee(),
     refundPolicy: bookingStore.refundPolicyText(),
     holdMinutes: bookingStore.holdMinutes()
@@ -1441,8 +1505,8 @@ app.get('/api/booking/slots', (req, res) => {
 // an { error, status } to relay as-is or the response body to send. The hold
 // expires on its own if the client never pays, so an abandoned checkout cannot
 // park a date indefinitely.
-async function holdSlotAndCheckout(slotId, { name, email, phone, notes, address, eventDescription, guestCount }) {
-  const held = bookingStore.holdSlot(slotId, { name, email, phone, notes, address, eventDescription, guestCount });
+async function holdSlotAndCheckout(slotId, { name, email, phone, notes, address, eventDescription, guestCount, packageId, addOnIds }) {
+  const held = bookingStore.holdSlot(slotId, { name, email, phone, notes, address, eventDescription, guestCount, packageId, addOnIds });
   if (held.error) return { error: held.error, status: held.status || 400 };
 
   const booking = held.booking;
@@ -1468,6 +1532,9 @@ async function holdSlotAndCheckout(slotId, { name, email, phone, notes, address,
   });
   bookingStore.attachOrder(booking.id, order.id);
 
+  const addOnsSummary = (booking.addOns || []).map(addOn => addOn.name).join(', ');
+  const packageSummary = `${booking.packageName}${addOnsSummary ? ` + ${addOnsSummary}` : ''}`;
+
   let session;
   try {
     session = await stripe.checkout.sessions.create({
@@ -1480,7 +1547,7 @@ async function holdSlotAndCheckout(slotId, { name, email, phone, notes, address,
           unit_amount: booking.deposit,
           product_data: {
             name: 'Event space reservation fee',
-            description: `Reserves ${booking.date}, 9am - 10pm. Rental fee of $${(booking.balanceDue / 100).toFixed(2)} due 15 days before the event. ${booking.refundPolicy}`
+            description: `Reserves ${booking.date}, 9am - 10pm -- ${packageSummary}. Rental fee of $${(booking.balanceDue / 100).toFixed(2)} due 15 days before the event. ${booking.refundPolicy}`
           }
         }
       }],
@@ -1516,15 +1583,17 @@ app.post('/api/booking/hold', rateLimit({ windowMs: 900000, max: 20, message: { 
     notes: String(req.body?.notes || '').trim(),
     address: String(req.body?.address || '').trim(),
     eventDescription: String(req.body?.eventDescription || '').trim(),
-    guestCount: req.body?.guestCount
+    guestCount: req.body?.guestCount,
+    packageId: String(req.body?.packageId || '').trim(),
+    addOnIds: Array.isArray(req.body?.addOnIds) ? req.body.addOnIds : []
   });
   if (result.error) return res.status(result.status).json({ error: result.error });
   res.json(result.body);
 });
 
-// A visitor requesting a date with no slot yet: creates one on demand at the
-// flat event-space rate, then reuses the exact same hold + Stripe pipeline as
-// booking a date that already has a slot.
+// A visitor requesting a date with no slot yet: creates one on demand, then
+// reuses the exact same hold + Stripe pipeline as booking a date that
+// already has a slot -- pricing is still whichever package they pick.
 app.post('/api/booking/request-hold', rateLimit({ windowMs: 900000, max: 20, message: { error: 'Too many booking attempts. Please try again shortly.' } }), async (req, res) => {
   const name = String(req.body?.name || '').trim();
   const email = String(req.body?.email || '').trim();
@@ -1544,7 +1613,9 @@ app.post('/api/booking/request-hold', rateLimit({ windowMs: 900000, max: 20, mes
     notes: String(req.body?.notes || '').trim(),
     address: String(req.body?.address || '').trim(),
     eventDescription: String(req.body?.eventDescription || '').trim(),
-    guestCount: req.body?.guestCount
+    guestCount: req.body?.guestCount,
+    packageId: String(req.body?.packageId || '').trim(),
+    addOnIds: Array.isArray(req.body?.addOnIds) ? req.body.addOnIds : []
   });
   if (result.error) return res.status(result.status).json({ error: result.error });
   res.json(result.body);
@@ -1557,6 +1628,14 @@ app.get('/api/admin/bookings', auth, (req, res) => {
     .map(booking => ({ ...booking, refundable: bookingStore.isRefundable(booking) }))
     .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
   res.json({ bookings: !status || status === 'all' ? all : all.filter(booking => booking.status === status) });
+});
+
+// Lets an admin sanity-check the rental agreement template (new clause
+// wording, layout tweaks) against fake data, without needing a real
+// confirmed booking on the books to test with.
+app.get('/api/admin/agreement/sample', auth, (req, res) => {
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.send(rentalAgreement.generateAgreementHtml(rentalAgreement.buildSampleBooking()));
 });
 
 // The Rental Agreement, rendered from a confirmed booking's own frozen
@@ -1589,10 +1668,18 @@ app.post('/api/admin/bookings', auth, (req, res) => {
     notes: req.body?.notes,
     address: req.body?.address,
     eventDescription: req.body?.eventDescription,
-    guestCount: req.body?.guestCount
+    guestCount: req.body?.guestCount,
+    packageId: req.body?.packageId,
+    addOnIds: Array.isArray(req.body?.addOnIds) ? req.body.addOnIds : []
   });
   if (result.error) return res.status(result.status || 400).json({ error: result.error });
   res.status(201).json(result);
+});
+
+// Backs the package/add-on pickers in the admin's manual-booking form --
+// the same rate-schedule-derived data the public booking form quotes from.
+app.get('/api/admin/booking/packages', auth, (req, res) => {
+  res.json({ packages: bookingStore.listBookablePackages(), addOns: bookingStore.listAddOns() });
 });
 
 app.get('/api/admin/booking/slots', auth, (req, res) => {
@@ -1617,23 +1704,6 @@ app.delete('/api/admin/booking/slots/:id', auth, (req, res) => {
   const removed = bookingStore.deleteSlot(String(req.params.id || ''));
   if (removed.error) return res.status(removed.status || 400).json({ error: removed.error });
   res.json({ ok: true });
-});
-
-// Session fee and deposit rate: read/write the persisted override so the
-// price can change without an env var edit or a deploy. Only affects slots
-// created from here on -- an already-open or already-booked slot keeps the
-// fee it was created with (see eventSpaceFee()/depositFor() in booking.js).
-app.get('/api/admin/booking/pricing', auth, (req, res) => {
-  res.json(bookingStore.getPricingSettings());
-});
-
-app.put('/api/admin/booking/pricing', auth, (req, res) => {
-  try {
-    const saved = bookingStore.setPricingSettings(req.body || {});
-    return res.json(saved);
-  } catch (error) {
-    return res.status(400).json({ error: error.message || 'Invalid pricing.' });
-  }
 });
 
 // Recurring unavailability, e.g. Mon-Fri for a day job. Reports how many
@@ -1831,6 +1901,45 @@ app.get('/api/media/:token', async (req, res) => {
   }
 });
 
+// Shared by the real Stripe webhook and the mock checkout's "Pay" handler --
+// both end up with a trusted checkout.session object (one verified by Stripe's
+// signature, the other never left this process to begin with) and need to do
+// the same thing with it.
+async function handleCheckoutSessionCompleted(session) {
+  const orderId = String(session.metadata?.orderId || session.client_reference_id || '').trim();
+
+  if (!orderId) {
+    // Predates order records, or a session created outside this API. Nothing
+    // to deliver, but do not fail the webhook -- Stripe would retry forever.
+    console.warn('Paid session carried no order id:', session.id);
+    return;
+  }
+
+  // markPaid is idempotent; a retry returns null and we fall through to the
+  // stored order, so only the steps that have not succeeded are re-run.
+  const order = orderStore.markPaid(orderId, {
+    sessionId: session.id,
+    paymentIntentId: String(session.payment_intent || ''),
+    email: String(session.customer_details?.email || session.customer_email || ''),
+    amountTotal: Number(session.amount_total) || 0,
+    currency: String(session.currency || 'usd')
+  }) || orderStore.findOrderById(orderId);
+
+  if (!order) {
+    console.warn('Paid session referenced an unknown order:', orderId);
+    return;
+  }
+
+  try {
+    await fulfilOrder(order);
+  } catch (error) {
+    // Never throw here: for the real webhook, Stripe retries on non-2xx and
+    // the order is already recorded as paid; the admin view shows what still
+    // needs attention either way.
+    console.error('Order fulfilment failed:', error?.message || error);
+  }
+}
+
 async function stripeWebhook(req, res) {
   if (!stripe || !process.env.STRIPE_WEBHOOK_SECRET) return res.sendStatus(400);
 
@@ -1846,38 +1955,7 @@ async function stripeWebhook(req, res) {
   }
 
   if (event.type === 'checkout.session.completed') {
-    const session = event.data.object;
-    const orderId = String(session.metadata?.orderId || session.client_reference_id || '').trim();
-
-    if (!orderId) {
-      // Predates order records, or a session created outside this API. Nothing
-      // to deliver, but do not fail the webhook -- Stripe would retry forever.
-      console.warn('Paid session carried no order id:', session.id);
-      return res.json({ received: true });
-    }
-
-    // markPaid is idempotent; a retry returns null and we fall through to the
-    // stored order, so only the steps that have not succeeded are re-run.
-    let order = orderStore.markPaid(orderId, {
-      sessionId: session.id,
-      paymentIntentId: String(session.payment_intent || ''),
-      email: String(session.customer_details?.email || session.customer_email || ''),
-      amountTotal: Number(session.amount_total) || 0,
-      currency: String(session.currency || 'usd')
-    }) || orderStore.findOrderById(orderId);
-
-    if (!order) {
-      console.warn('Paid session referenced an unknown order:', orderId);
-      return res.json({ received: true });
-    }
-
-    try {
-      await fulfilOrder(order);
-    } catch (error) {
-      // Never 500 here: Stripe retries on non-2xx, and the order is already
-      // recorded as paid. The admin view shows what still needs attention.
-      console.error('Order fulfilment failed:', error?.message || error);
-    }
+    await handleCheckoutSessionCompleted(event.data.object);
   }
 
   return res.json({ received: true });

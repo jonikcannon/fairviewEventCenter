@@ -30,7 +30,11 @@ const defaults = {
     ctaLabel: 'Plan your event',
     ctaTarget: 'eventCenter',
     video: '',
-    poster: ''
+    poster: '',
+    logoSize: 148,
+    eyebrowSize: 9,
+    headlineSize: 60,
+    introSize: 13
   },
   statement: {
     eyebrow: 'Welcome',
@@ -49,9 +53,48 @@ const defaults = {
   contact: {
     eyebrow: 'Get in touch',
     heading: "Questions about booking the center? Let's talk.",
-    email: 'hello@example.com'
+    email: 'hello@example.com',
+    address: '1053 Panola Rd #3029, Ellenwood, GA 30294',
+    faq: [
+      {
+        question: 'How do I book a date?',
+        answer: "Pick an open date on the Booking page and pay the reservation fee online to hold it, or reach out here and we'll help you find one."
+      },
+      {
+        question: 'What does the reservation fee cover?',
+        answer: 'The reservation fee is paid up front to hold your date. The rental fee is separate and due 15 days before your event.'
+      },
+      {
+        question: 'Can I tour the space before booking?',
+        answer: 'Yes -- reach out to schedule a walkthrough, or check the Event Center page for photos and a virtual tour.'
+      },
+      {
+        question: "What's the cancellation policy?",
+        answer: 'Reservation fees are refundable up until the refund window shown on your booking confirmation. After that window, the fee is non-refundable.'
+      }
+    ]
   },
-  tours: { communityCenter: '' },
+  rates: {
+    eyebrow: 'Pricing',
+    heading: 'Rate schedule',
+    intro: 'Current rental and reservation fees for the Fairview Community Center. Reach out if you have questions about a specific date.',
+    // Empty until an admin uploads a PDF/Word document through the Site
+    // content form -- rates change often enough that a re-upload, rather than
+    // hand-edited page copy, is the easiest way to keep this current.
+    document: '',
+    // Seeded from the 2026 pricing schedule; admin-editable line items so
+    // rates can be updated without a new document upload.
+    items: [
+      { name: 'Standard Package (Morning Only)', detail: 'Community Center, Picnic Pavilion & Ball Field · 9:00 AM – 3:00 PM', price: '$995.00', category: 'All-Season Days' },
+      { name: 'Standard Package (Evening Only)', detail: 'Community Center, Picnic Pavilion & Ball Field · 5:00 PM – 10:00 PM', price: '$1,200.00', category: 'All-Season Days' },
+      { name: 'Standard Package (All Day)', detail: 'Community Center, Picnic Pavilion & Ball Field · 9:00 AM – 10:00 PM', price: '$1,750.00', category: 'All-Season Days' },
+      { name: 'Community Center Only (Weekday)', detail: 'Monday–Thursday · 6-hour minimum', price: '$125.00/hour', category: 'All-Season Days' },
+      { name: 'Bereavement Package', detail: 'Community Center · 6 hours', price: '$750.00', category: 'Special Community Events Only' },
+      { name: 'Sunday Event', detail: 'Community Center, Picnic Pavilion & Ball Field · 1:00 PM – 8:00 PM', price: '$1,200.00', category: 'Special Community Events Only' },
+      { name: 'Refundable Rental Deposit', detail: 'Required for all bookings', price: '$175.00', category: '' }
+    ]
+  },
+  tours: { communityCenter: '', panoramaImage: '' },
   theme: { primary: '#26362e', background: '#f4f2ec', text: '#1f211d' }
 };
 
@@ -59,7 +102,9 @@ const maxLengths = {
   brand: 80, title: 120, description: 320, contactEmail: 254, footerText: 180,
   eyebrow: 100, headline: 180, intro: 500, ctaLabel: 80, heading: 180, copy: 600,
   paragraph: 1200, label: 60, media: 300, serviceName: 100, serviceText: 600,
-  workTitle: 120, category: 80, featureTitle: 80, featureText: 400
+  workTitle: 120, category: 80, featureTitle: 80, featureText: 400,
+  address: 300, faqQuestion: 200, faqAnswer: 600,
+  price: 40, rateItemName: 100, rateItemDetail: 240
 };
 
 function clone(value) {
@@ -73,6 +118,12 @@ function isPlainObject(value) {
 function assertString(value, max, field, required = false) {
   if (typeof value !== 'string' || value.length > max || (required && !value.trim())) {
     throw new Error(`${field} must be a string of ${required ? '1' : '0'}-${max} characters.`);
+  }
+}
+
+function assertNumberInRange(value, min, max, field) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
+    throw new Error(`${field} must be a number between ${min} and ${max}.`);
   }
 }
 
@@ -107,7 +158,7 @@ function assertKeys(value, allowed, field) {
 
 function validateContent(input) {
   if (!isPlainObject(input)) throw new Error('Content must be an object.');
-  assertKeys(input, ['site', 'navigation', 'hero', 'statement', 'about', 'contact', 'tours', 'theme'], 'content');
+  assertKeys(input, ['site', 'navigation', 'hero', 'statement', 'about', 'contact', 'rates', 'tours', 'theme'], 'content');
 
   const site = input.site;
   if (!isPlainObject(site)) throw new Error('site must be an object.');
@@ -136,7 +187,7 @@ function validateContent(input) {
 
   const hero = input.hero;
   if (!isPlainObject(hero)) throw new Error('hero must be an object.');
-  assertKeys(hero, ['eyebrow', 'headline', 'intro', 'ctaLabel', 'ctaTarget', 'video', 'poster'], 'hero');
+  assertKeys(hero, ['eyebrow', 'headline', 'intro', 'ctaLabel', 'ctaTarget', 'video', 'poster', 'logoSize', 'eyebrowSize', 'headlineSize', 'introSize'], 'hero');
   for (const field of ['eyebrow', 'headline', 'intro', 'ctaLabel']) assertString(hero[field], maxLengths[field], `hero.${field}`, true);
   // A free-text target would let a typo silently break the hero button (it
   // drives goToSection(), which just no-ops on an unknown section), so this
@@ -146,6 +197,10 @@ function validateContent(input) {
   }
   assertMediaReference(hero.video, 'hero.video');
   assertMediaReference(hero.poster, 'hero.poster');
+  assertNumberInRange(hero.logoSize, 40, 320, 'hero.logoSize');
+  assertNumberInRange(hero.eyebrowSize, 6, 18, 'hero.eyebrowSize');
+  assertNumberInRange(hero.headlineSize, 28, 110, 'hero.headlineSize');
+  assertNumberInRange(hero.introSize, 10, 26, 'hero.introSize');
 
   const statement = input.statement;
   if (!isPlainObject(statement)) throw new Error('statement must be an object.');
@@ -166,23 +221,53 @@ function validateContent(input) {
   if (!Array.isArray(about.features) || about.features.length > 12) throw new Error('about.features is invalid.');
   for (const feature of about.features) {
     if (!isPlainObject(feature)) throw new Error('Each about feature must be an object.');
-    assertKeys(feature, ['title', 'description', 'image'], 'about.features[]');
+    assertKeys(feature, ['title', 'description', 'image', 'price'], 'about.features[]');
     assertString(feature.title, maxLengths.featureTitle, 'feature title', true);
     assertString(feature.description, maxLengths.featureText, 'feature description', true);
     assertMediaReference(feature.image, 'feature image');
+    // Optional, and absent on features saved before this field existed --
+    // tolerate undefined here rather than backfilling every saved feature.
+    assertString(feature.price || '', maxLengths.price, 'feature price');
   }
 
   const contact = input.contact;
   if (!isPlainObject(contact)) throw new Error('contact must be an object.');
-  assertKeys(contact, ['eyebrow', 'heading', 'email'], 'contact');
+  assertKeys(contact, ['eyebrow', 'heading', 'email', 'address', 'faq'], 'contact');
   assertString(contact.eyebrow, maxLengths.eyebrow, 'contact.eyebrow', true);
   assertString(contact.heading, maxLengths.heading, 'contact.heading', true);
   assertString(contact.email, maxLengths.contactEmail, 'contact.email', true);
+  assertString(contact.address, maxLengths.address, 'contact.address', true);
+  if (!Array.isArray(contact.faq) || contact.faq.length > 20) throw new Error('contact.faq is invalid.');
+  for (const item of contact.faq) {
+    if (!isPlainObject(item)) throw new Error('Each FAQ item must be an object.');
+    assertKeys(item, ['question', 'answer'], 'contact.faq[]');
+    assertString(item.question, maxLengths.faqQuestion, 'FAQ question', true);
+    assertString(item.answer, maxLengths.faqAnswer, 'FAQ answer', true);
+  }
+
+  const rates = input.rates;
+  if (!isPlainObject(rates)) throw new Error('rates must be an object.');
+  assertKeys(rates, ['eyebrow', 'heading', 'intro', 'document', 'items'], 'rates');
+  assertString(rates.eyebrow, maxLengths.eyebrow, 'rates.eyebrow', true);
+  assertString(rates.heading, maxLengths.heading, 'rates.heading', true);
+  assertString(rates.intro, maxLengths.intro, 'rates.intro', true);
+  assertMediaReference(rates.document, 'rates.document');
+  if (!Array.isArray(rates.items) || rates.items.length > 40) throw new Error('rates.items is invalid.');
+  for (const item of rates.items) {
+    if (!isPlainObject(item)) throw new Error('Each rate item must be an object.');
+    assertKeys(item, ['name', 'detail', 'price', 'category'], 'rates.items[]');
+    assertString(item.name, maxLengths.rateItemName, 'rate item name', true);
+    assertString(item.detail, maxLengths.rateItemDetail, 'rate item detail');
+    assertString(item.price, maxLengths.price, 'rate item price');
+    // Optional grouping label; empty items render outside any category.
+    assertString(item.category || '', maxLengths.rateItemName, 'rate item category');
+  }
 
   const tours = input.tours;
   if (!isPlainObject(tours)) throw new Error('tours must be an object.');
-  assertKeys(tours, ['communityCenter'], 'tours');
+  assertKeys(tours, ['communityCenter', 'panoramaImage'], 'tours');
   assertEmbedUrl(tours.communityCenter, 'tours.communityCenter');
+  assertMediaReference(tours.panoramaImage, 'tours.panoramaImage');
 
   const theme = input.theme;
   if (!isPlainObject(theme)) throw new Error('theme must be an object.');

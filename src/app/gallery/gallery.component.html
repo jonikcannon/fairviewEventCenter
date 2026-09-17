@@ -4,7 +4,10 @@
       <p class="eyebrow">THE VENUE</p>
       <h2>See the space</h2>
     </div>
-    <p class="service-lede">A look at the rooms and grounds available to book below.</p>
+    <div class="section-head-cta">
+      <p class="service-lede">A look at the rooms and grounds available to book below.</p>
+      <button class="underlined" type="button" (click)="onBookingClick()">Book now <span>↗</span></button>
+    </div>
   </div>
   <div class="gallery-tabs">
     <button *ngFor="let kind of mediaKinds; trackBy: trackByMediaKind"
@@ -15,9 +18,12 @@
   </div>
 
   <ng-container *ngIf="activeMediaKind === 'tour'; else mediaGrid">
-    <div class="gallery-tour" *ngIf="safeTourUrl; else emptyTour">
+    <div class="gallery-tour" *ngIf="safeTourUrl; else panoramaOrEmpty">
       <iframe [src]="safeTourUrl" title="Community Center virtual tour" allow="fullscreen; xr-spatial-tracking" allowfullscreen loading="lazy"></iframe>
     </div>
+    <ng-template #panoramaOrEmpty>
+      <app-panorama-viewer *ngIf="panoramaUrl; else emptyTour" [imageUrl]="panoramaUrl" alt="Panoramic view of the Community Center"></app-panorama-viewer>
+    </ng-template>
     <ng-template #emptyTour>
       <p class="gallery-empty">A virtual tour isn't available yet.</p>
     </ng-template>

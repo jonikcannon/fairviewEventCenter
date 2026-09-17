@@ -14,6 +14,8 @@ import { SiteContent } from '../site-content';
 export class AboutComponent {
   @Input({ required: true }) content!: SiteContent['about'];
   @Output() contactClick = new EventEmitter<void>();
+  @Output() ratesClick = new EventEmitter<void>();
+  @Output() bookingClick = new EventEmitter<void>();
 
   // The bundled default until an admin uploads a real portrait through the
   // admin panel's Site content form.
@@ -44,5 +46,13 @@ export class AboutComponent {
 
   onLearnMoreClick() {
     this.contactClick.emit();
+  }
+
+  onRatesClick() {
+    this.ratesClick.emit();
+  }
+
+  onBookingClick() {
+    this.bookingClick.emit();
   }
 }

@@ -29,9 +29,33 @@ webhook and OAuth setup later.
 
 ## 1. Domain name
 
-Register one wherever you like (Cloudflare Registrar, Namecheap, GoDaddy, etc.).
-You'll point it at Cloudflare in the next step, and it's referenced throughout
-setup as `your-domain.com`.
+Register one wherever you like. Which path you take changes what step 2a
+below actually involves:
+
+- **Cloudflare Registrar** (Dashboard → Domain Registration → Register a
+  domain): the domain lands as an active Cloudflare zone immediately as part
+  of buying it — there is no separate "add a site" step, and nothing to wait on.
+- **Any other registrar** (Namecheap, GoDaddy, etc.): buying the domain does
+  **not** make it a Cloudflare zone by itself. You still have to do step 2a
+  (Dashboard → Add a site) and then update the nameservers at whichever
+  registrar you bought it from to the two Cloudflare gives you. The zone sits
+  in **Pending Nameserver Update** until Cloudflare detects that change, which
+  can take anywhere from a few minutes to a few hours.
+
+Either way, **check Dashboard → Websites/Overview and confirm the domain
+shows status "Active"** before moving on — `scripts/deploy/setup-tunnel.sh`
+(step 2c) and anything else that looks the domain up as a zone will fail with
+"is not a zone in this account" until it does, even though the domain is
+already registered and paid for.
+
+It's referenced throughout the rest of this guide as `your-domain.com`.
+
+> **API tokens and zone timing:** if you create a Cloudflare API token scoped
+> to "Specific zone" (used in step 2c for the Tunnel) *before* the domain
+> shows Active, the zone picker has nothing to offer it — the token ends up
+> scoped to nothing for that domain, and every call fails as if the zone
+> doesn't exist even after it goes Active. Create (or recreate) any
+> zone-scoped token only after the domain is Active.
 
 ---
 
@@ -75,16 +99,24 @@ Once `.env` has all five of those, `npm run media:sync` uploads your photos and
 
 ### 2c. Reaching the server (only if it has no public IP)
 
-If your server is a plain VPS with a public IP address, skip this — just point
-a DNS **A record** at it in the Cloudflare dashboard (step 2a's DNS tab) and
-turn on the orange "Proxied" cloud icon for automatic TLS.
+If your server is a plain cloud VPS with a public IP address, skip this — just
+point a DNS **A record** at it in the Cloudflare dashboard (step 2a's DNS tab)
+and turn on the orange "Proxied" cloud icon for automatic TLS.
 
-If instead the server sits on a home/office network behind a router (no public
-IP, or you don't want to open any ports), use a **Cloudflare Tunnel** instead:
-it dials out from the server to Cloudflare, so nothing needs to be exposed
-inbound. `scripts/deploy/setup-tunnel.sh` in this repo automates creating one —
-see the comment at the top of that file for the exact API token permissions it
-needs.
+If instead you're running a **local VPS** — a machine on your own home/office
+network acting as the server, behind a router, with no public IP (this is the
+setup this project actually uses: an on-prem box on the LAN, not a rented
+cloud VPS) — use a **Cloudflare Tunnel** instead: it dials out from the server
+to Cloudflare, so nothing needs to be exposed inbound and no ports need to be
+forwarded on the router. `scripts/deploy/setup-tunnel.sh` in this repo
+automates creating one — see the comment at the top of that file for the
+exact API token permissions it needs.
+
+> If the script fails with `is not a zone in this account`, this is almost
+> always the domain/token timing issue described in step 1, not a real
+> problem with the tunnel — go confirm the domain shows **Active** under
+> Websites/Overview, and that the API token was created (or recreated) after
+> it did.
 
 > **Note on "Cloudflare Pages":** this app is *not* a static site — bookings,
 > payments, the admin panel and file uploads all need a real server running

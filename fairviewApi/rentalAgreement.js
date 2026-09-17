@@ -57,7 +57,7 @@ function addressLines(address) {
 const CLAUSES = [
   `Reservations: A Reservation Fee/Security Deposit of ${'{{reservationFee}}'} is required at the time of signing the Rental Agreement to confirm and secure the event date. The Reservation Fee is non-refundable.<br><br>The Security Deposit is refundable, provided there are no damages or excessive trash left in the facility or on the premises at the end of your rental period based on the terms and conditions of this Rental Agreement. Please allow up to 15 days for the Security Deposit refund.`,
   `Cancellation Policy: Reservation Fees and any Add-on Items are Non-Refundable. All cancellations made thirty (30) days prior to your scheduled event will result in the loss of Fifty (50) percent of the Paid rental fees. Cancellations made less than 30 days prior to your scheduled event will result in the loss of One hundred percent of the Paid rental fees. Security Deposits, Reservation Fees, and Rental Fees are non-refundable due to acts of nature, such as inclement weather. Event Date Change Policy: Reserved event dates that are changed after the reservation has been confirmed will be subject to a $50.00 Change Fee. Please Reserve Carefully!`,
-  `Payment Terms: All rental fee payments are due Fifteen (15) days prior to the Event Date. Payments are accepted in the form of Cash, Cashier's Check, Money Orders, and Personal Checks. Payments made less than 15 days prior to the event date must be paid in Cash. If final payment is not received at least 15 days prior to the scheduled event date, you will be in default for non-payment and Greater Harvest-Fairview Community Center will cancel the event reservation. All Credit/Debit card payments will be subject to a 0.03% processing fee.`,
+  `Payment Terms: All rental fee payments are due Thirty (30) days prior to the Event Date. Payments are accepted in the form of Cash, Cashier's Check, Money Orders, and Personal Checks. Payments made less than 30 days prior to the event date must be paid in Cash. If final payment is not received at least 30 days prior to the scheduled event date, you will be in default for non-payment and Greater Harvest-Fairview Community Center will cancel the event reservation.`,
   `Returned Check Policy: Any check that is returned for insufficient funds will be assessed a $50.00 handling fee. All future payments must be made by Cashier's Check, Money Order or Cash.`,
   `Decorations: You are welcome to decorate the center for your event; however, we do not permit the use of nails, staples, glue, permanent tape, etc, to hang items on the walls. We do not allow glitter, rice, or birdseed to be used on the interior or exterior of the building as they are extremely difficult to clean up. Balloons used inside the building must be secured at all times. There will be a $50.00 Fee deducted from your Security Deposit Refund if balloon(s) are released and entangled in the ceiling fans or ceiling inside the building.`,
   `Pets: For the health and safety of all clients and guests, animals and pets are NOT allowed in the building or on the premises for sanitary purposes. ADA approved Seeing Eye animals are excluded from this clause and are permitted according to law.`,
@@ -136,7 +136,7 @@ function generateAgreementHtml(booking) {
     </div>
   </div>
 
-  <div class="fee-line">TOTAL RENTAL FEE: ${money(booking.sessionFee)} &nbsp;&nbsp;Due 15 days before your event date.</div>
+  <div class="fee-line">TOTAL RENTAL FEE: ${money(booking.sessionFee)} &nbsp;&nbsp;Due 30 days before your event date.</div>
 
   <div class="sign-block">
     <div>Client Signature:</div>
@@ -146,8 +146,11 @@ function generateAgreementHtml(booking) {
   </div>
 
   <div class="meta-grid">
+    <div>Package: ${escapeHtml(booking.packageName || '—')}</div>
+    <div>Add-ons: ${(booking.addOns || []).length ? escapeHtml(booking.addOns.map(addOn => addOn.name).join(', ')) : '—'}</div>
     <div>Event Description: ${escapeHtml(booking.eventDescription || '—')}</div>
     <div>Number of Guests Planned: ${escapeHtml(booking.guestCount || '—')}</div>
+    <div>Comment: ${escapeHtml(booking.notes || '—')}</div>
     <div>Rental Hours From: ${RENTAL_HOURS.from} To: ${RENTAL_HOURS.to}</div>
   </div>
 
@@ -162,7 +165,7 @@ function generateAgreementHtml(booking) {
     </thead>
     <tbody>
       <tr>
-        <td>Reservation Fee</td>
+        <td>Rental Deposit Fee</td>
         <td>${formatDate(booking.confirmedAt || booking.createdAt)}</td>
         <td>${money(booking.deposit)}</td>
         <td>${reservationPaid ? money(booking.deposit) : money(0)}</td>
@@ -184,4 +187,33 @@ function generateAgreementHtml(booking) {
 </html>`;
 }
 
-module.exports = { generateAgreementHtml };
+// Fake booking data an admin can use to sanity-check the template renders
+// correctly (new clause wording, layout changes, etc.) without needing a
+// real confirmed booking to test against. Values mirror the business's own
+// sample agreement (docs/Rental Agreement Sample.docx) so the rendered
+// output can be compared directly against it.
+function buildSampleBooking() {
+  const now = new Date();
+  const eventDate = new Date(now.getFullYear() + 1, 11, 31);
+  const pad = n => String(n).padStart(2, '0');
+  return {
+    id: 'sample',
+    name: 'Joe Sample',
+    email: 'myemail1234@gmail.com',
+    phone: '555-123-4567',
+    address: '123 Any Street\nAnytown, GA 30294',
+    date: `${eventDate.getFullYear()}-${pad(eventDate.getMonth() + 1)}-${pad(eventDate.getDate())}`,
+    eventDescription: 'Family Day',
+    guestCount: '100',
+    notes: 'Sample booking generated for testing the rental agreement template.',
+    packageName: 'Standard Package (All Day)',
+    addOns: [],
+    sessionFee: 175000,
+    deposit: 17500,
+    status: 'confirmed',
+    confirmedAt: now.toISOString(),
+    createdAt: now.toISOString()
+  };
+}
+
+module.exports = { generateAgreementHtml, buildSampleBooking };

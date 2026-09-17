@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, Input, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import { PanoramaViewerComponent } from '../panorama/panorama-viewer.component';
 
 // Mirrors the manifest shape in app.component.ts: `description` is optional
 // because only described media carries one, and the title is the fallback.
@@ -10,7 +11,7 @@ export type GalleryMediaKind = 'photos' | 'videos' | 'tour';
 @Component({
   selector: 'app-gallery',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, PanoramaViewerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './gallery.component.html',
   styleUrl: './gallery.component.css'
@@ -19,17 +20,21 @@ export class GalleryComponent {
   @Input() visibleGallery: GalleryItem[] = [];
   @Input() activeMediaKind: GalleryMediaKind = 'photos';
   @Input() tourUrl = '';
+  // Self-hosted fallback shown when tourUrl (an embed) isn't set -- see
+  // PanoramaViewerComponent.
+  @Input() panoramaUrl = '';
   @Input() galleryLoading = true;
   @Input() galleryPrefetching = false;
   @Input() galleryPrefetchCount = 0;
   @Output() mediaKindChange = new EventEmitter<GalleryMediaKind>();
   @Output() mediaClick = new EventEmitter<GalleryItem>();
   @Output() mediaLoaded = new EventEmitter<void>();
+  @Output() bookingClick = new EventEmitter<void>();
 
   readonly mediaKinds: { value: GalleryMediaKind; label: string }[] = [
+    { value: 'tour', label: 'Virtual Tour' },
     { value: 'photos', label: 'Photos' },
-    { value: 'videos', label: 'Videos' },
-    { value: 'tour', label: 'Virtual Tour' }
+    { value: 'videos', label: 'Videos' }
   ];
 
   constructor(private sanitizer: DomSanitizer) {}
@@ -52,6 +57,10 @@ export class GalleryComponent {
 
   onMediaLoaded() {
     this.mediaLoaded.emit();
+  }
+
+  onBookingClick() {
+    this.bookingClick.emit();
   }
 
   trackByMediaKind(_: number, kind: { value: GalleryMediaKind; label: string }) {

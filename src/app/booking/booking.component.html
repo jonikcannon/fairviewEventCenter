@@ -4,8 +4,7 @@
       <p class="eyebrow">BOOK THE VENUE</p>
       <h2>Reserve a day</h2>
       <p class="booking-intro">
-        Pick an available day and secure it with a deposit. $1,200 gets you the
-        whole venue for the day, 9am to 10pm.
+        Pick an available day, choose a package, and secure it with a reservation fee.
       </p>
     </div>
   </div>
@@ -81,6 +80,7 @@
         the rental fee is due 15 days before the event, once we confirm the details.
       </p>
       <form class="booking-form" (ngSubmit)="submitRequest()">
+        <ng-container *ngTemplateOutlet="pricingPicker"></ng-container>
         <label>
           Name
           <input type="text" name="requestName" [(ngModel)]="requestForm.name" required autocomplete="name">
@@ -111,7 +111,7 @@
         </label>
         <div class="booking-actions">
           <button type="submit" class="booking-pay" [disabled]="requestSubmitting">
-            {{ requestSubmitting ? 'Starting checkout...' : 'Reserve ' + formatDay(requestDateInput) + ' with a reservation fee' }}
+            {{ requestSubmitting ? 'Starting checkout...' : 'Reserve ' + formatDay(requestDateInput) + ' with ' + money(reservationFeeCents) + ' reservation fee' }}
           </button>
           <button type="button" class="booking-back" (click)="cancelRequest()" [disabled]="requestSubmitting">Cancel</button>
         </div>
@@ -140,16 +140,12 @@
       <p class="eyebrow">YOUR DAY</p>
       <h3>{{ formatDay(slot.date) }}</h3>
       <p class="booking-summary-service">Event space, 9am – 10pm<span *ngIf="slot.location"> · {{ slot.location }}</span></p>
-      <dl class="booking-costs">
-        <div><dt>Rental fee</dt><dd>{{ money(slot.sessionFee) }}</dd></div>
-        <div class="is-due"><dt>Reservation fee now</dt><dd>{{ money(slot.deposit) }}</dd></div>
-        <div><dt>Rental fee due 15 days before</dt><dd>{{ money(slot.balanceDue) }}</dd></div>
-      </dl>
       <p class="booking-policy" *ngIf="refundPolicy">{{ refundPolicy }}</p>
       <p class="booking-hold">This day is held for you for {{ holdMinutes }} minutes while you pay.</p>
     </div>
 
     <form class="booking-form" (ngSubmit)="submit()">
+      <ng-container *ngTemplateOutlet="pricingPicker"></ng-container>
       <label>
         Name
         <input type="text" name="bookingName" [(ngModel)]="form.name" required autocomplete="name">
@@ -183,10 +179,40 @@
 
       <div class="booking-actions">
         <button type="submit" class="booking-pay" [disabled]="submitting">
-          {{ submitting ? 'Starting checkout...' : 'Reserve ' + formatDay(slot.date) + ' with ' + money(slot.deposit) + ' reservation fee' }}
+          {{ submitting ? 'Starting checkout...' : 'Reserve ' + formatDay(slot.date) + ' with ' + money(reservationFeeCents) + ' reservation fee' }}
         </button>
         <button type="button" class="booking-back" (click)="cancel()" [disabled]="submitting">Pick another day</button>
       </div>
     </form>
   </div>
+
+  <!-- Shared by both forms above (direct-slot and request-a-date) -- picking
+       a package/add-ons is the same regardless of which flow got you here. -->
+  <ng-template #pricingPicker>
+    <fieldset class="booking-packages">
+      <legend>Choose a package</legend>
+      <label class="booking-package-option" *ngFor="let pkg of packages">
+        <input type="radio" name="bookingPackage" [checked]="selectedPackageId === pkg.id" (change)="selectPackage(pkg.id)">
+        <span class="booking-package-info">
+          <b>{{ pkg.name }}</b>
+          <span *ngIf="pkg.detail">{{ pkg.detail }}</span>
+        </span>
+        <span class="booking-package-price">{{ money(pkg.priceCents) }}</span>
+      </label>
+    </fieldset>
+
+    <fieldset class="booking-addons" *ngIf="addOns.length">
+      <legend>Add-ons <span class="optional">optional</span></legend>
+      <label class="booking-addon-option" *ngFor="let addOn of addOns">
+        <input type="checkbox" [checked]="selectedAddOnIds.includes(addOn.id)" (change)="toggleAddOn(addOn.id)">
+        {{ addOn.name }} <span class="booking-addon-price">{{ money(addOn.priceCents) }}</span>
+      </label>
+    </fieldset>
+
+    <dl class="booking-costs">
+      <div><dt>Rental fee</dt><dd>{{ money(rentalFeeCents) }}</dd></div>
+      <div class="is-due"><dt>Reservation fee now</dt><dd>{{ money(reservationFeeCents) }}</dd></div>
+      <div><dt>Rental fee due 15 days before</dt><dd>{{ money(rentalFeeCents) }}</dd></div>
+    </dl>
+  </ng-template>
 </section>

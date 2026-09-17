@@ -5,6 +5,7 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { GalleryComponent, GalleryMediaKind } from './gallery/gallery.component';
 import { Service, ServicesComponent } from './services/services.component';
 import { AboutComponent } from './about/about.component';
+import { RatesComponent } from './rates/rates.component';
 import { Product, ProductEditPayload, ProductOrderPayload, ProductsComponent } from './products/products.component';
 import { BookingComponent, BookingDateRequest, BookingRequest, BookingSlot } from './booking/booking.component';
 import { CartComponent, CartItem } from './cart/cart.component';
@@ -30,7 +31,7 @@ type Inquiry = {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule, GalleryComponent, ServicesComponent, AboutComponent, ProductsComponent, CartComponent, BookingComponent],
+  imports: [CommonModule, FormsModule, GalleryComponent, ServicesComponent, AboutComponent, RatesComponent, ProductsComponent, CartComponent, BookingComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css'
 })
@@ -300,25 +301,24 @@ export class AppComponent implements OnInit {
   bookingPolicy = '';
   bookingHoldMinutes = 15;
   bookingRequestSubmitting = false;
+  // Rate-schedule-derived packages/add-ons the public booking form quotes
+  // from (see bookingStore.listBookablePackages/listAddOns) -- there is no
+  // admin-editable flat fee anymore.
+  bookingPackages: { id: string; name: string; detail: string; priceCents: number }[] = [];
+  bookingAddOns: { id: string; name: string; priceCents: number }[] = [];
+  bookingReservationFeeCents = 0;
   adminBookings: any[] = [];
   adminSlots: any[] = [];
   adminBookingError = '';
   adminBookingLoading = false;
   adminBookingNotice = '';
-  // Rental fee and reservation fee, edited in dollars here and converted to
-  // cents at the API boundary (see loadAdminBookings/saveBookingPricing). The
-  // reservation fee is paid on top of the rental fee, not a prepayment
-  // against it. Only affects slots created after a save -- an already-open
-  // or already-booked day keeps the fees it was created with.
-  bookingPricing = { sessionFee: 1200, reservationFee: 100 };
-  bookingPricingLoading = false;
-  bookingPricingSaving = false;
-  bookingPricingError = '';
-  bookingPricingNotice = '';
+  // Same package/add-on list as the public form, for the manual-booking
+  // dropdown below.
+  adminPackages: { id: string; name: string; detail: string; priceCents: number }[] = [];
+  adminAddOns: { id: string; name: string; priceCents: number }[] = [];
   // A reservation taken outside the site (phone, cash, a walk-in): recorded
   // straight as a confirmed booking, no deposit/Stripe involved, so the day
-  // stops showing as bookable online. There's only one thing to book -- the
-  // event space, flat rate -- so there is no service or fee to fill in.
+  // stops showing as bookable online.
   manualBookingSubmitting = false;
   newManualBooking = {
     date: '',
@@ -326,6 +326,8 @@ export class AppComponent implements OnInit {
     name: '',
     email: '',
     phone: '',
+    packageId: '',
+    addOnIds: [] as string[],
     notes: '',
     address: '',
     eventDescription: '',
@@ -360,6 +362,32 @@ export class AppComponent implements OnInit {
   get safeVenueGalleryTourUrl(): SafeResourceUrl | null {
     if (!/^https:\/\//i.test(this.venueGalleryTourUrl)) return null;
     return this.sanitizer.bypassSecurityTrustResourceUrl(this.venueGalleryTourUrl);
+  }
+
+  // Opens Google Maps with directions to the venue already filled in as the
+  // destination; Maps fills the origin in with the visitor's current
+  // location itself (prompting for permission) rather than this needing to
+  // read geolocation directly.
+  get directionsUrl(): string {
+    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(this.content.contact.address)}`;
+  }
+
+  // Built from a plain address string we encode ourselves, never from an
+  // admin-supplied URL, so trusting it as an iframe src can't be redirected
+  // anywhere but google.com/maps.
+  get mapEmbedUrl(): SafeResourceUrl | null {
+    const address = this.content.contact.address.trim();
+    if (!address) return null;
+    return this.sanitizer.bypassSecurityTrustResourceUrl(`https://www.google.com/maps?q=${encodeURIComponent(address)}&output=embed`);
+  }
+  // Google's map tiles take a few seconds to render, and the iframe shows
+  // nothing at all until they do -- without this, that gap looks like a
+  // broken/empty section rather than a map that's still loading. Reset to
+  // true in goToSection() so revisiting Contact shows the spinner again
+  // rather than a stale "already loaded" state from last time.
+  mapLoading = true;
+  onMapLoaded() {
+    this.mapLoading = false;
   }
   get visibleCatalogCategories() {
     return this.catalogCategories;
@@ -562,6 +590,9 @@ export class AppComponent implements OnInit {
   }
   get activeTourUrl(): string {
     return this.content.tours.communityCenter;
+  }
+  get activeTourPanoramaUrl(): string {
+    return this.content.tours.panoramaImage ? mediaUrl(this.content.tours.panoramaImage) : '';
   }
   private slugify(value: string): string {
     return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'item';
@@ -933,6 +964,7 @@ export class AppComponent implements OnInit {
           statement: this.content.statement,
           about: this.content.about,
           contact: this.content.contact,
+          rates: this.content.rates,
           tours: this.content.tours,
           theme: this.content.theme
         })
@@ -971,9 +1003,29 @@ export class AppComponent implements OnInit {
   uploadAboutPortrait(event: Event) {
     this.pickAndUploadContentMedia(event, 'aboutPortrait', 15 * 1024 * 1024, value => (this.content.about.portraitImage = value));
   }
+  uploadRatesDocument(event: Event) {
+    this.pickAndUploadContentMedia(event, 'ratesDocument', 10 * 1024 * 1024, value => (this.content.rates.document = value));
+  }
+  uploadTourPanorama(event: Event) {
+    this.pickAndUploadContentMedia(event, 'tourPanorama', 20 * 1024 * 1024, value => (this.content.tours.panoramaImage = value));
+  }
+
+  addFaqItem() {
+    this.content.contact.faq = [...this.content.contact.faq, { question: '', answer: '' }];
+  }
+  removeFaqItem(index: number) {
+    this.content.contact.faq = this.content.contact.faq.filter((_, i) => i !== index);
+  }
+
+  addRateItem() {
+    this.content.rates.items = [...this.content.rates.items, { name: '', detail: '', price: '', category: '' }];
+  }
+  removeRateItem(index: number) {
+    this.content.rates.items = this.content.rates.items.filter((_, i) => i !== index);
+  }
 
   addAboutFeature() {
-    this.content.about.features = [...(this.content.about.features || []), { title: '', description: '', image: '' }];
+    this.content.about.features = [...(this.content.about.features || []), { title: '', description: '', image: '', price: '' }];
   }
   removeAboutFeature(index: number) {
     this.content.about.features = (this.content.about.features || []).filter((_, i) => i !== index);
@@ -1023,6 +1075,10 @@ export class AppComponent implements OnInit {
     // would otherwise leave a now-blocked time sitting in the panel as if it
     // were still bookable, until a full page reload happened to clear it.
     if (section === 'booking') void this.loadBookingSlots();
+    // The map iframe is destroyed/recreated by *ngIf each time this section
+    // mounts, so it always needs to reload -- reset the flag or a second
+    // visit would skip straight to "loaded" and show nothing while it does.
+    if (section === 'contact') this.mapLoading = true;
   }
 
   async submitContactForm() {
@@ -1062,12 +1118,17 @@ export class AppComponent implements OnInit {
       this.bookingUnblockedDates = Array.isArray(body?.unblockedDates) ? body.unblockedDates : [];
       this.bookingPolicy = String(body?.refundPolicy || '');
       this.bookingHoldMinutes = Number(body?.holdMinutes) || 15;
+      this.bookingPackages = Array.isArray(body?.packages) ? body.packages : [];
+      this.bookingAddOns = Array.isArray(body?.addOns) ? body.addOns : [];
+      this.bookingReservationFeeCents = Number(body?.reservationFeeCents) || 0;
     } catch (error) {
       console.error('Booking availability could not be loaded.', error);
       this.bookingSlots = [];
       this.bookingBookedDates = [];
       this.bookingClosedWeekdays = [];
       this.bookingUnblockedDates = [];
+      this.bookingPackages = [];
+      this.bookingAddOns = [];
       this.bookingError = 'Availability could not be loaded. Please try again shortly.';
     }
     this.bookingLoading = false;
@@ -1155,21 +1216,19 @@ export class AppComponent implements OnInit {
     this.adminBookingError = '';
     try {
       const headers = { Authorization: `Bearer ${this.adminToken}` };
-      const [bookingsRes, slotsRes, blocksRes, unblocksRes, pricingRes] = await Promise.all([
+      const [bookingsRes, slotsRes, blocksRes, unblocksRes, packagesRes] = await Promise.all([
         fetch(`${this.api}/admin/bookings`, { headers }),
         fetch(`${this.api}/admin/booking/slots`, { headers }),
         fetch(`${this.api}/admin/booking/blocks`, { headers }),
         fetch(`${this.api}/admin/booking/unblocks`, { headers }),
-        fetch(`${this.api}/admin/booking/pricing`, { headers })
+        fetch(`${this.api}/admin/booking/packages`, { headers })
       ]);
-      if (!bookingsRes.ok || !slotsRes.ok || !blocksRes.ok || !unblocksRes.ok || !pricingRes.ok) throw new Error('Booking data unavailable');
+      if (!bookingsRes.ok || !slotsRes.ok || !blocksRes.ok || !unblocksRes.ok || !packagesRes.ok) throw new Error('Booking data unavailable');
       this.adminBookings = (await bookingsRes.json())?.bookings || [];
       this.adminSlots = (await slotsRes.json())?.slots || [];
-      const pricing = await pricingRes.json();
-      this.bookingPricing = {
-        sessionFee: Math.round((Number(pricing?.sessionFeeCents) || 0)) / 100,
-        reservationFee: Math.round((Number(pricing?.reservationFeeCents) || 0)) / 100
-      };
+      const packages = await packagesRes.json();
+      this.adminPackages = Array.isArray(packages?.packages) ? packages.packages : [];
+      this.adminAddOns = Array.isArray(packages?.addOns) ? packages.addOns : [];
       this.adminBlocks = (await blocksRes.json())?.blocks || [];
       this.adminUnblocks = (await unblocksRes.json())?.unblocks || [];
     } catch (error) {
@@ -1179,39 +1238,10 @@ export class AppComponent implements OnInit {
     this.adminBookingLoading = false;
   }
 
-  async saveBookingPricing() {
-    this.bookingPricingError = '';
-    this.bookingPricingNotice = '';
-    const sessionFeeCents = Math.round((Number(this.bookingPricing.sessionFee) || 0) * 100);
-    const reservationFeeCents = Math.round((Number(this.bookingPricing.reservationFee) || 0) * 100);
-    this.bookingPricingSaving = true;
-    try {
-      const response = await fetch(`${this.api}/admin/booking/pricing`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.adminToken}` },
-        body: JSON.stringify({ sessionFeeCents, reservationFeeCents })
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        this.bookingPricingError = body.error || 'Could not save pricing.';
-        return;
-      }
-      this.bookingPricing = {
-        sessionFee: Math.round(Number(body.sessionFeeCents) || 0) / 100,
-        reservationFee: Math.round(Number(body.reservationFeeCents) || 0) / 100
-      };
-      this.bookingPricingNotice = 'Saved. This applies to days published from now on -- already-open or booked days keep their original fee.';
-    } catch {
-      this.bookingPricingError = 'Network error. Please try again.';
-    } finally {
-      this.bookingPricingSaving = false;
-    }
-  }
-
   // Records a reservation taken outside the site (phone, cash, a walk-in)
   // straight as a confirmed booking -- the day is open by default until this
-  // runs. There's only one thing to book -- the event space, flat $1,200 rate
-  // -- so the server fills that in; this just says which day and for whom.
+  // runs. Priced the same way an online booking is: whichever rate-schedule
+  // package (and add-ons) the admin picks below.
   async createManualBooking() {
     if (this.manualBookingSubmitting) return;
     this.adminBookingError = '';
@@ -1222,6 +1252,10 @@ export class AppComponent implements OnInit {
     }
     if (!this.newManualBooking.name.trim()) {
       this.adminBookingError = "Enter the customer's name.";
+      return;
+    }
+    if (!this.newManualBooking.packageId) {
+      this.adminBookingError = 'Choose a package.';
       return;
     }
     this.manualBookingSubmitting = true;
@@ -1238,7 +1272,9 @@ export class AppComponent implements OnInit {
           notes: this.newManualBooking.notes,
           address: this.newManualBooking.address,
           eventDescription: this.newManualBooking.eventDescription,
-          guestCount: this.newManualBooking.guestCount
+          guestCount: this.newManualBooking.guestCount,
+          packageId: this.newManualBooking.packageId,
+          addOnIds: this.newManualBooking.addOnIds
         })
       });
       const body = await response.json();
@@ -1247,12 +1283,18 @@ export class AppComponent implements OnInit {
         return;
       }
       this.adminBookingNotice = `Recorded a booking for ${this.newManualBooking.date}.`;
-      this.newManualBooking = { date: '', location: '', name: '', email: '', phone: '', notes: '', address: '', eventDescription: '', guestCount: '' };
+      this.newManualBooking = { date: '', location: '', name: '', email: '', phone: '', packageId: '', addOnIds: [], notes: '', address: '', eventDescription: '', guestCount: '' };
       await this.loadAdminBookings();
       this.clearPublicBookingCache();
     } finally {
       this.manualBookingSubmitting = false;
     }
+  }
+
+  toggleManualBookingAddOn(addOnId: string) {
+    const next = new Set(this.newManualBooking.addOnIds);
+    if (next.has(addOnId)) next.delete(addOnId); else next.add(addOnId);
+    this.newManualBooking.addOnIds = Array.from(next);
   }
 
   toggleBlockWeekday(day: number) {
@@ -1425,6 +1467,39 @@ export class AppComponent implements OnInit {
   agreementLoadingId = '';
   agreementError = '';
   agreementErrorBookingId = '';
+  agreementSampleLoading = false;
+  agreementSampleError = '';
+  async previewSampleAgreement() {
+    this.agreementSampleError = '';
+    this.agreementSampleLoading = true;
+    const tab = window.open('', '_blank');
+    if (!tab) {
+      this.agreementSampleError = 'Your browser blocked the new tab. Please allow pop-ups for this site and try again.';
+      this.agreementSampleLoading = false;
+      return;
+    }
+    tab.document.write('Loading sample agreement…');
+    try {
+      const response = await fetch(`${this.api}/admin/agreement/sample`, {
+        headers: { Authorization: `Bearer ${this.adminToken}` }
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        this.agreementSampleError = body.error || 'Could not generate the sample agreement.';
+        tab.close();
+        return;
+      }
+      const html = await response.text();
+      tab.document.open();
+      tab.document.write(html);
+      tab.document.close();
+    } catch {
+      this.agreementSampleError = 'Network error. Please try again.';
+      tab.close();
+    } finally {
+      this.agreementSampleLoading = false;
+    }
+  }
   async viewRentalAgreement(booking: any) {
     this.agreementError = '';
     this.agreementLoadingId = booking.id;

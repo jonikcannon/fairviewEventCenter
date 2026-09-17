@@ -12,13 +12,13 @@
 
 <main id="top">
   <section class="hero" *ngIf="activeSection === 'home'">
-    <div class="hero-copy"><p class="eyebrow">{{ content.hero.eyebrow }}</p><h1>{{ content.hero.headline }}</h1><p class="intro">{{ content.hero.intro }}</p><button class="underlined" (click)="goToSection(content.hero.ctaTarget)">{{ content.hero.ctaLabel }} <span>↓</span></button></div>
+    <div class="hero-copy" [style.--hero-logo-size.px]="content.hero.logoSize" [style.--hero-eyebrow-size.px]="content.hero.eyebrowSize" [style.--hero-headline-size.px]="content.hero.headlineSize" [style.--hero-intro-size.px]="content.hero.introSize"><img [src]="logoMark" alt="" class="hero-logo"><p class="eyebrow">{{ content.hero.eyebrow }}</p><h1>{{ content.hero.headline }}</h1><p class="intro">{{ content.hero.intro }}</p><button class="underlined" (click)="goToSection(content.hero.ctaTarget)">{{ content.hero.ctaLabel }} <span>↓</span></button></div>
     <!-- [muted]="true" binds the PROPERTY, not the attribute. A bare `muted`
          only reflects to the property when the browser parses static HTML;
          Angular creates the element and then sets attributes, so the property
          stays false, the browser treats the video as unmuted, and autoplay is
          refused with NotAllowedError. The attribute alone is not enough. -->
-    <div class="hero-image"><video [src]="heroVideo" [poster]="heroPoster" [muted]="true" autoplay loop playsinline disablepictureinpicture aria-label="Aerial drone footage of the Fairview Event Center building and grounds"></video><div class="hero-stamp">EST. 2014<br><b>✦</b><br>NEW YORK · BEYOND</div></div>
+    <div class="hero-image"><video [src]="heroVideo" [poster]="heroPoster" [muted]="true" autoplay loop playsinline disablepictureinpicture aria-label="Aerial drone footage of the Fairview Event Center building and grounds"></video></div>
   </section>
 
   <section class="statement" *ngIf="activeSection === 'home'"><p class="eyebrow">{{ content.statement.eyebrow }}</p><h2>{{ content.statement.heading }}</h2><div class="statement-note">{{ content.statement.copy }}<span>↘</span></div></section>
@@ -28,12 +28,14 @@
     [visibleGallery]="visibleGallery"
     [activeMediaKind]="activeMediaKind"
     [tourUrl]="activeTourUrl"
+    [panoramaUrl]="activeTourPanoramaUrl"
     [galleryLoading]="galleryLoading"
     [galleryPrefetching]="galleryPrefetching"
     [galleryPrefetchCount]="galleryPrefetchCount"
     (mediaKindChange)="changeGalleryMediaKind($event)"
     (mediaClick)="openMedia($event)"
-    (mediaLoaded)="onMediaLoaded()"></app-gallery>
+    (mediaLoaded)="onMediaLoaded()"
+    (bookingClick)="goToSection('booking')"></app-gallery>
 
   <app-booking
     *ngIf="activeSection === 'booking'"
@@ -47,6 +49,9 @@
     [refundPolicy]="bookingPolicy"
     [holdMinutes]="bookingHoldMinutes"
     [requestSubmitting]="bookingRequestSubmitting"
+    [packages]="bookingPackages"
+    [addOns]="bookingAddOns"
+    [reservationFeeCents]="bookingReservationFeeCents"
     (book)="onBookSlot($event)"
     (requestDate)="onRequestDate($event)"
     (enquire)="goToSection('contact')"></app-booking>
@@ -69,7 +74,9 @@
     </div>
   </div>
 
-  <app-about *ngIf="activeSection === 'about'" [content]="content.about" (contactClick)="goToSection('contact')"></app-about>
+  <app-about *ngIf="activeSection === 'about'" [content]="content.about" (contactClick)="goToSection('contact')" (ratesClick)="goToSection('rates')" (bookingClick)="goToSection('booking')"></app-about>
+
+  <app-rates *ngIf="activeSection === 'rates'" [content]="content.rates" (contactClick)="goToSection('contact')"></app-rates>
 
   <section id="contact" class="contact" *ngIf="activeSection === 'contact'">
     <p class="eyebrow">{{ content.contact.eyebrow }}</p>
@@ -88,6 +95,27 @@
       <p class="error" *ngIf="contactFormError">{{ contactFormError }}</p>
     </form>
     <a [href]="'mailto:' + content.contact.email" class="contact-link">Prefer email? Write to us at {{ content.contact.email }} <span>↗</span></a>
+
+    <div class="contact-visit" *ngIf="content.contact.address">
+      <p class="eyebrow">Visit us</p>
+      <p class="contact-address">{{ content.contact.address }}</p>
+      <a class="underlined" [href]="directionsUrl" target="_blank" rel="noreferrer">Get directions <span>↗</span></a>
+      <div class="contact-map" *ngIf="mapEmbedUrl">
+        <div class="contact-map-loading" *ngIf="mapLoading">
+          <div class="spinner"></div>
+          <p>Loading map…</p>
+        </div>
+        <iframe [src]="mapEmbedUrl" title="Map to {{ content.site.brand }}" referrerpolicy="no-referrer-when-downgrade" (load)="onMapLoaded()"></iframe>
+      </div>
+    </div>
+
+    <div class="contact-faq" *ngIf="content.contact.faq.length">
+      <h3 class="contact-faq-heading">Frequently asked questions</h3>
+      <details class="contact-faq-item" *ngFor="let item of content.contact.faq">
+        <summary>{{ item.question }}</summary>
+        <p>{{ item.answer }}</p>
+      </details>
+    </div>
   </section>
 </main>
 
@@ -175,6 +203,18 @@
               <p class="admin-inquiries-meta" *ngIf="contentMediaUploading['heroPoster']">Uploading…</p>
               <button type="button" class="underlined" *ngIf="content.hero.poster" (click)="content.hero.poster = ''">Reset to default poster</button>
             </div>
+            <label>Logo size <span class="optional">{{ content.hero.logoSize }}px, shown above the hero text</span>
+              <input type="range" min="40" max="320" step="4" [(ngModel)]="content.hero.logoSize" name="contentHeroLogoSize">
+            </label>
+            <label>Eyebrow text size <span class="optional">{{ content.hero.eyebrowSize }}px</span>
+              <input type="range" min="6" max="18" step="1" [(ngModel)]="content.hero.eyebrowSize" name="contentHeroEyebrowSize">
+            </label>
+            <label>Headline size <span class="optional">{{ content.hero.headlineSize }}px</span>
+              <input type="range" min="28" max="110" step="2" [(ngModel)]="content.hero.headlineSize" name="contentHeroHeadlineSize">
+            </label>
+            <label>Intro text size <span class="optional">{{ content.hero.introSize }}px</span>
+              <input type="range" min="10" max="26" step="1" [(ngModel)]="content.hero.introSize" name="contentHeroIntroSize">
+            </label>
           </fieldset>
 
           <fieldset class="admin-card">
@@ -216,6 +256,7 @@
               </div>
               <label>Title<input [(ngModel)]="feature.title" [name]="'featureTitle' + i" placeholder="e.g. Full-service kitchen" required></label>
               <label>Description<textarea [(ngModel)]="feature.description" [name]="'featureDescription' + i" placeholder="A short line about this feature" required></textarea></label>
+              <label>Price <span class="optional">optional, e.g. $50 or $25/session</span><input [(ngModel)]="feature.price" [name]="'featurePrice' + i" placeholder="Leave blank if not priced separately"></label>
               <div class="media-field">
                 <label>Image
                   <input type="file" accept="image/*" (change)="uploadAboutFeatureImage($event, i)" [disabled]="!!contentMediaUploading['aboutFeature-' + i]">
@@ -232,10 +273,56 @@
           </fieldset>
 
           <fieldset class="admin-card">
+            <legend>Rate schedule</legend>
+            <p class="admin-card-hint">Linked from the About page. Upload a PDF or Word doc any time rates change -- no need to touch the page copy.</p>
+            <label>Eyebrow<input [(ngModel)]="content.rates.eyebrow" name="contentRatesEyebrow" required></label>
+            <label>Heading<input [(ngModel)]="content.rates.heading" name="contentRatesHeading" required></label>
+            <label>Intro<textarea [(ngModel)]="content.rates.intro" name="contentRatesIntro" required></textarea></label>
+            <div class="media-field">
+              <label>Rate schedule document <span class="optional">PDF or Word doc</span>
+                <input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" (change)="uploadRatesDocument($event)" [disabled]="!!contentMediaUploading['ratesDocument']">
+              </label>
+              <div class="media-current" *ngIf="content.rates.document">
+                <div class="media-current-info"><b>Document set</b><span>Choose a file above to replace it</span></div>
+                <a class="underlined" [href]="mediaUrl(content.rates.document)" target="_blank" rel="noreferrer">View <span>↗</span></a>
+              </div>
+              <p class="admin-inquiries-meta" *ngIf="contentMediaUploading['ratesDocument']">Uploading…</p>
+              <button type="button" class="underlined" *ngIf="content.rates.document" (click)="content.rates.document = ''">Remove document</button>
+            </div>
+            <p class="admin-card-hint">Rate items shown as a price list on the page, independent of the document above.</p>
+            <div class="about-feature-editor" *ngFor="let item of content.rates.items; let i = index">
+              <div class="about-feature-editor-head">
+                <b>Item {{ i + 1 }}</b>
+                <button type="button" class="underlined" (click)="removeRateItem(i)">Remove item</button>
+              </div>
+              <label>Name<input [(ngModel)]="item.name" [name]="'rateItemName' + i" placeholder="e.g. Standard Package (All Day)" required></label>
+              <label>Detail <span class="optional">optional, e.g. hours or included spaces</span><input [(ngModel)]="item.detail" [name]="'rateItemDetail' + i"></label>
+              <label>Price <span class="optional">optional, e.g. $995.00 or $125.00/hour</span><input [(ngModel)]="item.price" [name]="'rateItemPrice' + i"></label>
+              <label>Category <span class="optional">optional grouping heading, e.g. "All-Season Days" -- leave blank to show ungrouped</span><input [(ngModel)]="item.category" [name]="'rateItemCategory' + i"></label>
+            </div>
+            <button type="button" class="underlined" (click)="addRateItem()">Add item +</button>
+          </fieldset>
+
+          <fieldset class="admin-card">
             <legend>Contact</legend>
             <label>Eyebrow<input [(ngModel)]="content.contact.eyebrow" name="contentContactEyebrow" required></label>
             <label>Contact heading<input [(ngModel)]="content.contact.heading" name="contentHeading" required></label>
             <label>Contact email<input [(ngModel)]="content.contact.email" name="contentEmail" type="email" required></label>
+            <label>Address <span class="optional">shown with a "Get directions" link and map</span><input [(ngModel)]="content.contact.address" name="contentAddress" required></label>
+          </fieldset>
+
+          <fieldset class="admin-card">
+            <legend>Frequently asked questions</legend>
+            <p class="admin-card-hint">Shown on the Contact page, below the directions map.</p>
+            <div class="about-feature-editor" *ngFor="let item of content.contact.faq; let i = index">
+              <div class="about-feature-editor-head">
+                <b>Question {{ i + 1 }}</b>
+                <button type="button" class="underlined" (click)="removeFaqItem(i)">Remove question</button>
+              </div>
+              <label>Question<input [(ngModel)]="item.question" [name]="'faqQuestion' + i" required></label>
+              <label>Answer<textarea [(ngModel)]="item.answer" [name]="'faqAnswer' + i" required></textarea></label>
+            </div>
+            <button type="button" class="underlined" (click)="addFaqItem()">Add question +</button>
           </fieldset>
 
           <fieldset class="admin-card">
@@ -294,15 +381,26 @@
 
         <fieldset class="admin-card admin-virtual-tour">
           <legend>Virtual tour</legend>
-          <label>Embed URL (Matterport, YouTube, etc.)
+          <label>Embed URL (Matterport, YouTube, etc.) <span class="optional">takes priority over the panorama photo below when set</span>
             <input [(ngModel)]="venueGalleryTourUrl" name="venueGalleryTourUrl" type="url" placeholder="https://my.matterport.com/show/?m=...">
           </label>
-          <button type="button" class="underlined" [disabled]="venueGalleryTourSaving" (click)="saveVenueGalleryTour()">{{ venueGalleryTourSaving ? 'Saving…' : 'Save tour link' }}</button>
           <div class="tour-preview" *ngIf="safeVenueGalleryTourUrl">
             <span class="tour-preview-label">Preview</span>
             <iframe [src]="safeVenueGalleryTourUrl" title="Virtual tour preview" allow="fullscreen; xr-spatial-tracking" allowfullscreen loading="lazy"></iframe>
           </div>
           <p class="admin-card-hint" *ngIf="venueGalleryTourUrl && !safeVenueGalleryTourUrl">Only https:// embed links can be previewed or published.</p>
+          <div class="media-field">
+            <label>Panorama photo <span class="optional">shown in an interactive pan/zoom viewer when no embed URL is set above</span>
+              <input type="file" accept="image/*" (change)="uploadTourPanorama($event)" [disabled]="!!contentMediaUploading['tourPanorama']">
+            </label>
+            <div class="media-current" *ngIf="content.tours.panoramaImage">
+              <img [src]="mediaUrl(content.tours.panoramaImage)" alt="">
+              <div class="media-current-info"><b>Panorama set</b><span>Choose a file above to replace it</span></div>
+            </div>
+            <p class="admin-inquiries-meta" *ngIf="contentMediaUploading['tourPanorama']">Uploading…</p>
+            <button type="button" class="underlined" *ngIf="content.tours.panoramaImage" (click)="content.tours.panoramaImage = ''">Remove panorama</button>
+          </div>
+          <button type="button" class="underlined" [disabled]="venueGalleryTourSaving" (click)="saveVenueGalleryTour()">{{ venueGalleryTourSaving ? 'Saving…' : 'Save tour settings' }}</button>
         </fieldset>
         <button type="button" class="underlined signout" (click)="logout()">Sign out</button>
       </section>
@@ -338,40 +436,42 @@
       </section>
 
       <section class="admin-inquiries" *ngIf="adminView === 'bookings'">
-        <fieldset class="admin-card admin-pricing">
-          <legend>Rental fee &amp; reservation fee</legend>
-          <p class="admin-card-hint">
-            The reservation fee is paid online, up front, on top of the rental fee -- not a prepayment against it
-            (matching the paper Rental Agreement's non-refundable Reservation Fee). Applies to days published from
-            here on; a day that's already open or booked keeps the fees it was created with.
-          </p>
-          <div class="two-up">
-            <label>Rental fee (USD)<input type="number" min="1" step="1" [(ngModel)]="bookingPricing.sessionFee" name="pricingSessionFee"></label>
-            <label>Reservation fee (USD)<input type="number" min="1" max="1000" step="1" [(ngModel)]="bookingPricing.reservationFee" name="pricingReservationFee"></label>
-          </div>
-          <p class="admin-pricing-preview" *ngIf="bookingPricing.sessionFee && bookingPricing.reservationFee">
-            A booking today would collect a {{ formatMoney(bookingPricing.reservationFee * 100) }} reservation fee now, with the {{ formatMoney(bookingPricing.sessionFee * 100) }} rental fee due 15 days before the event.
-          </p>
-          <button type="button" class="publish" [disabled]="bookingPricingSaving" (click)="saveBookingPricing()">{{ bookingPricingSaving ? 'Saving…' : 'Save pricing' }} <span>→</span></button>
-          <p class="admin-inquiries-meta" *ngIf="bookingPricingNotice">{{ bookingPricingNotice }}</p>
-          <p class="error" *ngIf="bookingPricingError">{{ bookingPricingError }}</p>
+        <fieldset class="admin-card">
+          <legend>Rental agreement</legend>
+          <p class="admin-card-hint">Preview the Rental Agreement template with fake data (no real booking needed) -- useful after changing clause wording or layout.</p>
+          <button type="button" class="underlined" [disabled]="agreementSampleLoading" (click)="previewSampleAgreement()">{{ agreementSampleLoading ? 'Opening…' : 'Preview sample agreement' }}</button>
+          <p class="error" *ngIf="agreementSampleError">{{ agreementSampleError }}</p>
         </fieldset>
 
         <p class="admin-inquiries-meta">Record a manual booking (phone, cash, walk-in)</p>
+        <p class="admin-card-hint">Rental fee and reservation fee are no longer set here -- edit the Rate Schedule (Site content) instead, and pick the package below.</p>
         <div class="admin-inquiries-tools admin-booking-tools">
           <label>Date<input type="date" [(ngModel)]="newManualBooking.date" name="manualDate"></label>
           <label>Location <span class="optional">optional</span><input type="text" [(ngModel)]="newManualBooking.location" name="manualLocation" placeholder="Optional"></label>
           <label>Customer name<input type="text" [(ngModel)]="newManualBooking.name" name="manualName"></label>
           <label>Email <span class="optional">optional</span><input type="email" [(ngModel)]="newManualBooking.email" name="manualEmail"></label>
           <label>Phone <span class="optional">optional</span><input type="tel" [(ngModel)]="newManualBooking.phone" name="manualPhone"></label>
+          <label>Package<select [(ngModel)]="newManualBooking.packageId" name="manualPackageId">
+            <option value="" disabled>Choose a package</option>
+            <option *ngFor="let pkg of adminPackages" [value]="pkg.id">{{ pkg.name }} ({{ formatMoney(pkg.priceCents) }})</option>
+          </select></label>
           <label>Mailing address <span class="optional">optional, for the rental agreement</span><input type="text" [(ngModel)]="newManualBooking.address" name="manualAddress" placeholder="Street, city, state, ZIP"></label>
           <label>Event description <span class="optional">optional</span><input type="text" [(ngModel)]="newManualBooking.eventDescription" name="manualEventDescription" placeholder="e.g. Wedding reception"></label>
           <label>Guests planned <span class="optional">optional</span><input type="number" min="0" [(ngModel)]="newManualBooking.guestCount" name="manualGuestCount"></label>
+        </div>
+        <div class="admin-booking-addons" *ngIf="adminAddOns.length">
+          <span class="admin-inquiries-meta">Add-ons</span>
+          <label class="checkbox-label" *ngFor="let addOn of adminAddOns">
+            <input type="checkbox" [checked]="newManualBooking.addOnIds.includes(addOn.id)" (change)="toggleManualBookingAddOn(addOn.id)">
+            {{ addOn.name }} ({{ formatMoney(addOn.priceCents) }})
+          </label>
+        </div>
+        <div class="admin-inquiries-tools">
           <button type="button" class="underlined" [disabled]="manualBookingSubmitting" (click)="createManualBooking()">{{ manualBookingSubmitting ? 'Recording…' : 'Record booking +' }}</button>
           <button type="button" class="underlined" (click)="setAdminView('bookings')">Refresh <span>&#8635;</span></button>
         </div>
         <p class="admin-block-hint">
-          Takes the day immediately as a confirmed booking at the standard {{ formatMoney(bookingPricing.sessionFee * 100) }} event space rate -- no reservation
+          Takes the day immediately as a confirmed booking at the chosen package's rate -- no reservation
           fee is collected through the site, so use this only for a reservation already agreed by phone, cash, or in
           person. A block does not stop this. Days are bookable online by default; use Block below to close a day off.
         </p>
@@ -436,10 +536,7 @@
               <h4>{{ slot.date }}</h4>
               <p>{{ slot.status }}<span *ngIf="slot.blocked"> &middot; blocked</span></p>
             </div>
-            <p class="inquiry-card-contact">
-              {{ formatMoney(slot.sessionFee) }} &middot; {{ formatMoney(slot.sessionFee / 4) }} deposit
-              <span *ngIf="slot.location"> &middot; {{ slot.location }}</span>
-            </p>
+            <p class="inquiry-card-contact" *ngIf="slot.location">{{ slot.location }}</p>
             <div class="inquiry-card-foot">
               <button type="button" class="underlined" (click)="unblockSlot(slot)" *ngIf="slot.blocked && slot.status === 'open'">Unblock</button>
               <button type="button" class="underlined" (click)="removeSlot(slot)" *ngIf="slot.status === 'open'">Remove day</button>
@@ -460,6 +557,7 @@
               <span *ngIf="booking.phone"> &middot; {{ booking.phone }}</span>
             </p>
             <p class="inquiry-card-message">
+              <span *ngIf="booking.packageName">{{ booking.packageName }}<span *ngIf="booking.addOns?.length"> + {{ booking.addOns.length }} add-on(s)</span> &middot; </span>
               Reservation fee {{ formatMoney(booking.deposit) }} paid &middot; rental fee {{ formatMoney(booking.balanceDue) }} due 15 days before the event.
               <span *ngIf="booking.agreedTime">Agreed time: {{ booking.agreedTime }}.</span>
               <span *ngIf="booking.notes"> {{ booking.notes }}</span>
@@ -490,4 +588,4 @@
   </aside>
 </div>
 
-<footer><a class="brand"><img src="assets/brand/logo-mark-reversed.svg" alt="" class="brand-mark">{{ content.site.brand }}</a><p>© 2026 {{ content.site.brand }}. {{ content.site.footerText }}</p><div><a (click)="openAdmin()">Admin</a><a *ngFor="let link of content.site.socialLinks" [href]="link.url" target="_blank" rel="noreferrer">{{ link.label }}</a></div></footer>
+<footer><a class="brand" (click)="goToSection('home')"><img [src]="logoMark" alt="" class="brand-mark">{{ content.site.brand }}</a><a class="brand credit" href="https://demori-studios.com" target="_blank" rel="noreferrer"><img src="assets/brand/demori-studios-mark.svg" alt="" class="brand-mark">Demori Studios<sup>™</sup></a><div><a (click)="openAdmin()">Admin</a><a *ngFor="let link of content.site.socialLinks" [href]="link.url" target="_blank" rel="noreferrer">{{ link.label }}</a></div></footer>

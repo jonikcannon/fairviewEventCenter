@@ -153,7 +153,10 @@ const CONTENT_TYPES = {
   '.webp': 'image/webp',
   '.avif': 'image/avif',
   '.mp4': 'video/mp4',
-  '.json': 'application/json'
+  '.json': 'application/json',
+  '.pdf': 'application/pdf',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 };
 
 function contentTypeFor(file) {
