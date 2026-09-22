@@ -17,11 +17,15 @@ import { CommonModule } from '@angular/common';
   styleUrl: './panorama-viewer.component.css'
 })
 export class PanoramaViewerComponent {
-  @Input({ required: true }) imageUrl!: string;
-  @Input() alt = 'Panoramic view of the venue';
+  // One or more rooms/views, each its own panorama photo; a room picker (tabs)
+  // is shown above the viewer whenever there's more than one. Switching rooms
+  // resets pan/zoom -- each room is framed independently.
+  @Input({ required: true }) rooms: { label: string; image: string }[] = [];
 
   @ViewChild('viewport', { static: true }) viewportRef!: ElementRef<HTMLDivElement>;
   @ViewChild('image', { static: true }) imageRef!: ElementRef<HTMLImageElement>;
+
+  activeRoomIndex = 0;
 
   private naturalWidth = 0;
   private naturalHeight = 0;
@@ -37,6 +41,24 @@ export class PanoramaViewerComponent {
   private pointerId: number | null = null;
   private lastX = 0;
   private lastY = 0;
+
+  get imageUrl(): string {
+    return this.rooms[this.activeRoomIndex]?.image || '';
+  }
+
+  get alt(): string {
+    const label = this.rooms[this.activeRoomIndex]?.label;
+    return label ? `Panoramic view of ${label}` : 'Panoramic view of the venue';
+  }
+
+  selectRoom(index: number): void {
+    if (index === this.activeRoomIndex) return;
+    this.activeRoomIndex = index;
+    this.hasInteracted = false;
+    // onImageLoad() re-runs resetView() once the new <img> src finishes
+    // loading, so pan/zoom for the new room starts framed correctly rather
+    // than inheriting the previous room's offset/zoom.
+  }
 
   get displayWidth(): number {
     return this.naturalWidth * this.zoom;

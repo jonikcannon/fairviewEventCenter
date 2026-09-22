@@ -75,9 +75,15 @@ export class BookingComponent {
   @Input() packages: BookingPackage[] = [];
   @Input() addOns: BookingAddOn[] = [];
   @Input() reservationFeeCents = 0;
+  // Set by the parent once a waitlist join actually succeeds, so this
+  // component can show a confirmation for that specific date rather than
+  // trusting its own optimistic state (the request could still fail).
+  @Input() waitlistSubmitting = false;
+  @Input() waitlistJoinedDate = '';
   @Output() book = new EventEmitter<BookingRequest>();
   @Output() enquire = new EventEmitter<void>();
   @Output() requestDate = new EventEmitter<BookingDateRequest>();
+  @Output() joinWaitlist = new EventEmitter<{ date: string; name: string; email: string; phone: string; notes: string }>();
 
   selectedSlotId = '';
   calendarMonth = this.firstOfMonth(new Date());
@@ -89,6 +95,11 @@ export class BookingComponent {
 
   requestDateInput = '';
   requestForm = { name: '', email: '', phone: '', notes: '', address: '', eventDescription: '', guestCount: '' };
+
+  // A date the visitor tried to pick that turned out unavailable (booked or
+  // closed) -- offered a "join the waitlist" form instead of a dead end.
+  waitlistDateInput = '';
+  waitlistForm = { name: '', email: '', phone: '', notes: '' };
 
   // Shared by both the direct-slot and request-a-date forms: only one is ever
   // visible at a time (see select()/selectRequestDate()), and picking a
@@ -247,7 +258,7 @@ export class BookingComponent {
 
   // Picking an open day goes straight to the deposit form -- a day is the
   // whole bookable unit now, so there is no intermediate time-of-day step.
-  selectCalendarDate(day: { date: string | null; slot: BookingSlot | null; requestable: boolean }) {
+  selectCalendarDate(day: { date: string | null; slot: BookingSlot | null; requestable: boolean; unavailable: boolean }) {
     if (!day.date) return;
     if (day.slot) {
       this.select(day.slot);
@@ -255,6 +266,10 @@ export class BookingComponent {
     }
     if (day.requestable) {
       this.selectRequestDate(day.date);
+      return;
+    }
+    if (day.unavailable && day.date >= this.todayDateValue) {
+      this.offerWaitlist(day.date);
       return;
     }
     this.formError = 'That date is not available for bookings yet.';
@@ -279,7 +294,46 @@ export class BookingComponent {
       return;
     }
     this.requestDateInput = '';
+    if (date >= this.todayDateValue) {
+      this.offerWaitlist(date);
+      return;
+    }
     this.formError = 'That date is not available.';
+  }
+
+  // A picked date turned out to be booked/closed rather than past -- offer
+  // the waitlist instead of a dead-end error (the waitlist card below
+  // explains itself, so this only needs to clear any stale error).
+  private offerWaitlist(date: string) {
+    this.waitlistDateInput = date;
+    this.formError = '';
+  }
+
+  cancelWaitlist() {
+    this.waitlistDateInput = '';
+    this.formError = '';
+  }
+
+  submitWaitlist() {
+    if (!this.waitlistDateInput || this.waitlistSubmitting) return;
+    const name = this.waitlistForm.name.trim();
+    const email = this.waitlistForm.email.trim();
+    if (name.length < 2) {
+      this.formError = 'Please enter your name.';
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      this.formError = 'Please enter a valid email address.';
+      return;
+    }
+    this.formError = '';
+    this.joinWaitlist.emit({
+      date: this.waitlistDateInput,
+      name,
+      email,
+      phone: this.waitlistForm.phone.trim(),
+      notes: this.waitlistForm.notes.trim()
+    });
   }
 
   // Opens the "request this date" form -- used both from the calendar grid and
@@ -289,6 +343,7 @@ export class BookingComponent {
     this.formError = '';
     this.selectedSlotId = '';
     this.requestDateInput = date;
+    this.waitlistDateInput = '';
     this.calendarMonth = this.firstOfMonth(this.parseDay(date));
   }
 
@@ -334,6 +389,7 @@ export class BookingComponent {
   select(slot: BookingSlot) {
     this.selectedSlotId = slot.id;
     this.requestDateInput = '';
+    this.waitlistDateInput = '';
     this.formError = '';
   }
 
@@ -348,6 +404,7 @@ export class BookingComponent {
   clearDate() {
     this.selectedSlotId = '';
     this.requestDateInput = '';
+    this.waitlistDateInput = '';
     this.formError = '';
   }
 

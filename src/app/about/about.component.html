@@ -4,10 +4,10 @@
          alt="The Fairview Community Center">
   </div>
   <div class="about-copy">
-    <p class="eyebrow">{{ content.eyebrow }}</p>
-    <h2>{{ content.heading }} <em>{{ content.headingEmphasis }}</em></h2>
-    <p *ngFor="let paragraph of bodyParagraphs">{{ paragraph }}</p>
-    <button class="underlined" (click)="onLearnMoreClick()">{{ content.ctaLabel }} <span>↗</span></button>
+    <p class="eyebrow" [ngStyle]="style('about.eyebrow')">{{ content.eyebrow }}</p>
+    <h2 [ngStyle]="style('about.heading')">{{ content.heading }} <em>{{ content.headingEmphasis }}</em></h2>
+    <p *ngFor="let paragraph of bodyParagraphs" [ngStyle]="style('about.body')">{{ paragraph }}</p>
+    <button class="underlined" [ngStyle]="style('about.ctaLabel')" (click)="onLearnMoreClick()">{{ content.ctaLabel }} <span>↗</span></button>
     <button class="underlined rates-link" (click)="onRatesClick()">View rate schedule <span>↗</span></button>
     <button class="underlined rates-link" (click)="onBookingClick()">Book now <span>↗</span></button>
   </div>
@@ -17,9 +17,9 @@
   <h3 class="about-features-heading">Features:</h3>
   <div class="about-features-grid">
     <article class="about-feature" *ngFor="let feature of features">
-      <img *ngIf="featureImage(feature.image) as image" [src]="image" [alt]="feature.title">
-      <h4>{{ feature.title }}<span class="about-feature-price" *ngIf="feature.price">{{ feature.price }}</span></h4>
-      <p>{{ feature.description }}</p>
+      <img *ngIf="featureImage(feature.image) as image" [src]="image" [alt]="feature.title" class="about-feature-image" role="button" tabindex="0" [attr.aria-label]="'View ' + feature.title + ' photo'" (click)="onFeatureClick(feature)" (keydown.enter)="onFeatureClick(feature)" (keydown.space)="$event.preventDefault(); onFeatureClick(feature)">
+      <h4 [ngStyle]="style('about.featureTitle')">{{ feature.title }}<span class="about-feature-price" [ngStyle]="style('about.featurePrice')" *ngIf="feature.price">{{ feature.price }}</span></h4>
+      <p [ngStyle]="style('about.featureDescription')">{{ feature.description }}</p>
       <span class="about-feature-included" *ngIf="!feature.price">Included</span>
     </article>
   </div>

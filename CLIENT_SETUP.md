@@ -25,6 +25,18 @@ Go through them roughly in this order — Cloudflare and the server come before
 Stripe/Google because their values (your domain, your R2 bucket) feed into the
 webhook and OAuth setup later.
 
+> **Already have all of these, and just moving the site to a different
+> machine?** This entire guide is about *creating* accounts for a project
+> that doesn't have them yet. Moving an existing project's hosting to a new
+> self-hosted machine is a different task — the domain, Cloudflare account
+> (DNS + R2 bucket), Stripe, Google Sign-In, and email all **stay exactly as
+> they are**; only the physical computer running the app changes. Don't
+> recreate any of the accounts below for that — go straight to
+> [CLIENT_MACHINE_SETUP.md](CLIENT_MACHINE_SETUP.md), which is written for
+> exactly that case and reuses everything here as-is (the existing `.env`
+> file, carried over, rather than reassembling it field by field from this
+> guide).
+
 ---
 
 ## 1. Domain name
@@ -128,14 +140,25 @@ exact API token permissions it needs.
 
 ## 3. A server (VPS) to host the app
 
-Any small Ubuntu VPS works — DigitalOcean, Linode, Hetzner, Vultr, or similar;
-the cheapest tier is plenty to start. You don't need to configure this yourself
-if someone else is deploying the site for you, but you do need to **provision
-and pay for it**, and hand over SSH access to whoever runs the bootstrap step.
+Two options:
 
-Full setup steps live in [scripts/deploy/README.md](scripts/deploy/README.md)
-and [.github/DEPLOYMENT.md](.github/DEPLOYMENT.md) — bootstrapping installs
-Nginx, PM2, and Node, and wires up automatic deploys from GitHub.
+- **A rented cloud VPS** (DigitalOcean, Linode, Hetzner, Vultr, or similar) —
+  the cheapest tier is plenty to start. You don't need to configure this
+  yourself if someone else is deploying the site for you, but you do need to
+  **provision and pay for it**, and hand over SSH access to whoever runs the
+  bootstrap step.
+- **Your own machine, self-hosted** — a box you own, on your own network.
+  This is what the setup already documented in this repo actually assumes
+  (see [scripts/deploy/README.md](scripts/deploy/README.md) and
+  [.github/DEPLOYMENT.md](.github/DEPLOYMENT.md) for the technical
+  reference). If this is your path, **use
+  [CLIENT_MACHINE_SETUP.md](CLIENT_MACHINE_SETUP.md) instead of reading those
+  two directly** — it's the same setup, written as one ordered runbook for
+  running it yourself (or with your IT), including the Cloudflare Tunnel step
+  a machine with no public IP needs that a rented VPS doesn't.
+
+Either way, bootstrapping installs Nginx, PM2, and Node, and wires up
+automatic deploys from GitHub.
 
 ---
 

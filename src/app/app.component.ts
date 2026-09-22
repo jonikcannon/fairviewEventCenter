@@ -8,9 +8,11 @@ import { AboutComponent } from './about/about.component';
 import { RatesComponent } from './rates/rates.component';
 import { Product, ProductEditPayload, ProductOrderPayload, ProductsComponent } from './products/products.component';
 import { BookingComponent, BookingDateRequest, BookingRequest, BookingSlot } from './booking/booking.component';
+import { BookingLookupComponent, BookingLookupResult } from './booking-lookup/booking-lookup.component';
 import { CartComponent, CartItem } from './cart/cart.component';
 import { getApiBaseUrl, mediaUrl } from './media-url';
 import { defaultSiteContent, SiteContent } from './site-content';
+import { FONT_ONLY_KEYS, TEXT_FONTS, TEXT_SIZE_MAX, TEXT_SIZE_MIN, TextStyle, TextStyles, textStyle } from './text-style';
 
 type Work = { id?: string; image: string; title: string; type: string; size?: string; price?: number; mediaType?: 'image' | 'video' };
 // `description` is written by hand in storage/media/descriptions.json and
@@ -31,7 +33,7 @@ type Inquiry = {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule, GalleryComponent, ServicesComponent, AboutComponent, RatesComponent, ProductsComponent, CartComponent, BookingComponent],
+  imports: [CommonModule, FormsModule, GalleryComponent, ServicesComponent, AboutComponent, RatesComponent, ProductsComponent, CartComponent, BookingComponent, BookingLookupComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css'
 })
@@ -311,6 +313,19 @@ export class AppComponent implements OnInit {
   bookingPackages: { id: string; name: string; detail: string; priceCents: number }[] = [];
   bookingAddOns: { id: string; name: string; priceCents: number }[] = [];
   bookingReservationFeeCents = 0;
+  waitlistSubmitting = false;
+  waitlistJoinedDate = '';
+
+  // --- guest booking lookup ---
+  bookingLookupLoading = false;
+  bookingLookupError = '';
+  bookingLookupResult: BookingLookupResult | null = null;
+  // The email/confirmation code that produced bookingLookupResult -- kept so
+  // sign/pay-balance/agreement/ics actions can re-prove ownership without
+  // asking the visitor to retype them (see requireBookingMatch server-side).
+  private bookingLookupContext: { email: string; confirmationCode: string } | null = null;
+  bookingAgreementSignSubmitting = false;
+  bookingBalancePaySubmitting = false;
   adminBookings: any[] = [];
   adminSlots: any[] = [];
   adminBookingError = '';
@@ -339,6 +354,9 @@ export class AppComponent implements OnInit {
   };
   adminBlocks: any[] = [];
   adminUnblocks: any[] = [];
+  adminWaitlist: any[] = [];
+  waitlistNotifySubmittingDate = '';
+  bookingStats: { monthly: { month: string; bookings: number; revenueCents: number }[]; totals: { confirmedBookings: number; upcomingBookings: number; revenueCents: number; outstandingBalanceCents: number } } | null = null;
   // A one-off exception to a recurring weekday block: frees a whole day so it
   // can be published and booked. endDate, when set, turns this into a bulk
   // unblock across every day in [date, endDate].
@@ -444,13 +462,25 @@ export class AppComponent implements OnInit {
   private async handleBookingCheckoutReturn() {
     const params = new URLSearchParams(window.location.search);
     const status = params.get('booking');
-    if (status !== 'success' && status !== 'cancel') return;
+    const knownStatuses = ['success', 'cancel', 'balance-paid', 'balance-cancel'];
+    if (!status || !knownStatuses.includes(status)) return;
 
     // Strip the param immediately so a refresh cannot re-show the notice or
     // re-run this branch.
     const url = new URL(window.location.href);
     url.searchParams.delete('booking');
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+
+    if (status === 'balance-paid' || status === 'balance-cancel') {
+      this.goToSection('booking');
+      await this.showNotice(
+        status === 'balance-paid'
+          ? 'Payment received -- your rental fee balance is paid in full. Look up your booking below for a receipt.'
+          : 'Balance payment was cancelled. Look up your booking below to try again or pay by another method.',
+        status === 'balance-paid' ? 'Balance paid' : 'Payment cancelled'
+      );
+      return;
+    }
 
     this.goToSection('eventCenter');
     if (status === 'success') {
@@ -472,10 +502,37 @@ export class AppComponent implements OnInit {
       const incoming = await response.json();
       this.content = { ...defaultSiteContent, ...incoming };
       this.applyTheme();
+      this.updateStructuredData();
       this.changeDetector.detectChanges();
     } catch {
       // The tracked defaults keep the public shell usable while the API is unavailable.
     }
+  }
+  // Publishes schema.org EventVenue structured data from the loaded site
+  // content, so search engines can surface the business name, address, and
+  // phone directly. Uses textContent (never innerHTML) to inject it, so
+  // there's no way for a content field to inject markup -- content.js's own
+  // server-side validation is what keeps these fields themselves safe.
+  private updateStructuredData(): void {
+    const data: Record<string, string> = {
+      '@context': 'https://schema.org',
+      '@type': 'EventVenue',
+      name: this.content.site.brand,
+      description: this.content.site.description,
+      url: window.location.origin
+    };
+    if (this.content.site.phone) data['telephone'] = this.content.site.phone;
+    if (this.content.contact.address) data['address'] = this.content.contact.address;
+    if (this.content.contact.email) data['email'] = this.content.contact.email;
+
+    let script = document.getElementById('structured-data') as HTMLScriptElement | null;
+    if (!script) {
+      script = document.createElement('script');
+      script.id = 'structured-data';
+      script.type = 'application/ld+json';
+      document.head.appendChild(script);
+    }
+    script.textContent = JSON.stringify(data);
   }
   // Pushes the saved palette into the CSS custom properties every live
   // stylesheet was refactored to read (see src/styles.css). Setting them on
@@ -595,8 +652,8 @@ export class AppComponent implements OnInit {
   get activeTourUrl(): string {
     return this.content.tours.communityCenter;
   }
-  get activeTourPanoramaUrl(): string {
-    return this.content.tours.panoramaImage ? mediaUrl(this.content.tours.panoramaImage) : '';
+  get activeTourPanoramas(): { label: string; image: string }[] {
+    return (this.content.tours.panoramas || []).map(room => ({ label: room.label, image: mediaUrl(room.image) }));
   }
   private slugify(value: string): string {
     return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'item';
@@ -829,6 +886,18 @@ export class AppComponent implements OnInit {
     this.viewerVideoPlaying = false;
     this.isMediaViewerOpen = true;
   }
+  openFeatureMedia(feature: { title: string; image: string; description?: string }) {
+    this.selectedMedia = {
+      category: 'Feature',
+      title: feature.title,
+      image: feature.image,
+      mediaType: 'image',
+      description: feature.description
+    };
+    this.currentMediaIndex = -1;
+    this.viewerVideoPlaying = false;
+    this.isMediaViewerOpen = true;
+  }
   closeMediaViewer() {
     this.selectedMedia = undefined;
     this.currentMediaIndex = -1;
@@ -836,7 +905,7 @@ export class AppComponent implements OnInit {
     this.isMediaViewerOpen = false;
   }
   showPreviousMedia() {
-    if (!this.isMediaViewerOpen) return;
+    if (!this.isMediaViewerOpen || this.currentMediaIndex < 0) return;
     const items = this.getVisibleGalleryItems();
     if (!items.length) return;
     const nextIndex = this.currentMediaIndex <= 0 ? items.length - 1 : this.currentMediaIndex - 1;
@@ -845,7 +914,7 @@ export class AppComponent implements OnInit {
     this.viewerVideoPlaying = false;
   }
   showNextMedia() {
-    if (!this.isMediaViewerOpen) return;
+    if (!this.isMediaViewerOpen || this.currentMediaIndex < 0) return;
     const items = this.getVisibleGalleryItems();
     if (!items.length) return;
     const nextIndex = (this.currentMediaIndex + 1) % items.length;
@@ -970,7 +1039,8 @@ export class AppComponent implements OnInit {
           contact: this.content.contact,
           rates: this.content.rates,
           tours: this.content.tours,
-          theme: this.content.theme
+          theme: this.content.theme,
+          textStyles: this.content.textStyles || {}
         })
       });
       const body = await response.json();
@@ -995,6 +1065,38 @@ export class AppComponent implements OnInit {
     this.applyTheme();
   }
 
+  readonly fontOptions = TEXT_FONTS;
+  readonly textSizeMin = TEXT_SIZE_MIN;
+  readonly textSizeMax = TEXT_SIZE_MAX;
+
+  textStyleOf(key: string) { return textStyle(this.content.textStyles, key); }
+  isFontOnly(key: string) { return FONT_ONLY_KEYS.has(key); }
+  hasTextStyle(key: string) { return !!this.content.textStyles?.[key]; }
+  styleSize(key: string) { return this.content.textStyles?.[key]?.size ?? ''; }
+  styleFont(key: string) { return this.content.textStyles?.[key]?.font ?? ''; }
+
+  setTextSize(key: string, input: HTMLInputElement) {
+    const typed = Number(input.value);
+    const size = input.value.trim() !== '' && Number.isFinite(typed)
+      ? Math.min(TEXT_SIZE_MAX, Math.max(TEXT_SIZE_MIN, Math.round(typed)))
+      : undefined;
+    input.value = size === undefined ? '' : String(size);
+    this.updateTextStyle(key, { size });
+  }
+  setTextFont(key: string, font: string) { this.updateTextStyle(key, { font: font || undefined }); }
+  resetTextStyle(key: string) { this.updateTextStyle(key, { size: undefined, font: undefined }); }
+
+  // Rebuilds the whole map rather than mutating it, so OnPush children that
+  // receive it as an input see a new reference.
+  private updateTextStyle(key: string, patch: TextStyle) {
+    const next: TextStyles = { ...(this.content.textStyles || {}) };
+    const entry: TextStyle = { ...next[key], ...patch };
+    if (entry.size === undefined) delete entry.size;
+    if (!entry.font) delete entry.font;
+    if (Object.keys(entry).length) next[key] = entry; else delete next[key];
+    this.content.textStyles = next;
+  }
+
   uploadSiteLogo(event: Event) {
     this.pickAndUploadContentMedia(event, 'siteLogo', 5 * 1024 * 1024, value => (this.content.site.logo = value));
   }
@@ -1010,8 +1112,14 @@ export class AppComponent implements OnInit {
   uploadRatesDocument(event: Event) {
     this.pickAndUploadContentMedia(event, 'ratesDocument', 10 * 1024 * 1024, value => (this.content.rates.document = value));
   }
-  uploadTourPanorama(event: Event) {
-    this.pickAndUploadContentMedia(event, 'tourPanorama', 20 * 1024 * 1024, value => (this.content.tours.panoramaImage = value));
+  addTourPanoramaRoom() {
+    this.content.tours.panoramas = [...(this.content.tours.panoramas || []), { label: '', image: '' }];
+  }
+  removeTourPanoramaRoom(index: number) {
+    this.content.tours.panoramas = (this.content.tours.panoramas || []).filter((_, i) => i !== index);
+  }
+  uploadTourPanoramaRoom(event: Event, index: number) {
+    this.pickAndUploadContentMedia(event, 'tourPanorama', 20 * 1024 * 1024, value => (this.content.tours.panoramas[index].image = value), `tourPanorama-${index}`);
   }
 
   addFaqItem() {
@@ -1202,6 +1310,126 @@ export class AppComponent implements OnInit {
     }
   }
 
+  async onJoinWaitlist(request: { date: string; name: string; email: string; phone: string; notes: string }) {
+    if (this.waitlistSubmitting) return;
+    this.waitlistSubmitting = true;
+    this.bookingError = '';
+    try {
+      const response = await fetch(`${this.api}/booking/waitlist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request)
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        this.bookingError = String(body?.error || 'Could not join the waitlist. Please try again.');
+        return;
+      }
+      this.waitlistJoinedDate = request.date;
+    } catch (error) {
+      console.error('Waitlist join failed.', error);
+      this.bookingError = 'Could not reach the booking service. Please try again.';
+    } finally {
+      this.waitlistSubmitting = false;
+    }
+  }
+
+  private bookingLookupQuery(): string {
+    if (!this.bookingLookupContext) return '';
+    return `?email=${encodeURIComponent(this.bookingLookupContext.email)}&confirmationCode=${encodeURIComponent(this.bookingLookupContext.confirmationCode)}`;
+  }
+
+  get bookingLookupAgreementHref(): string {
+    if (!this.bookingLookupResult) return '';
+    return `${this.api}/bookings/${this.bookingLookupResult.id}/agreement${this.bookingLookupQuery()}`;
+  }
+
+  get bookingLookupIcsHref(): string {
+    if (!this.bookingLookupResult) return '';
+    return `${this.api}/bookings/${this.bookingLookupResult.id}/calendar.ics${this.bookingLookupQuery()}`;
+  }
+
+  async onBookingLookup(request: { email: string; confirmationCode: string }) {
+    if (this.bookingLookupLoading) return;
+    this.bookingLookupLoading = true;
+    this.bookingLookupError = '';
+    try {
+      const response = await fetch(`${this.api}/bookings/lookup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request)
+      });
+      const body = await response.json();
+      if (!response.ok || !body?.booking) {
+        this.bookingLookupResult = null;
+        this.bookingLookupContext = null;
+        this.bookingLookupError = String(body?.error || 'No booking found for that email and confirmation code.');
+        return;
+      }
+      this.bookingLookupResult = body.booking;
+      this.bookingLookupContext = { email: request.email, confirmationCode: request.confirmationCode };
+    } catch (error) {
+      console.error('Booking lookup failed.', error);
+      this.bookingLookupError = 'Could not reach the booking service. Please try again.';
+    } finally {
+      this.bookingLookupLoading = false;
+    }
+  }
+
+  onBookingLookupReset() {
+    this.bookingLookupResult = null;
+    this.bookingLookupContext = null;
+    this.bookingLookupError = '';
+  }
+
+  async onSignAgreement(name: string) {
+    if (!this.bookingLookupResult || !this.bookingLookupContext || this.bookingAgreementSignSubmitting) return;
+    this.bookingAgreementSignSubmitting = true;
+    this.bookingLookupError = '';
+    try {
+      const response = await fetch(`${this.api}/bookings/${this.bookingLookupResult.id}/agreement/sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, ...this.bookingLookupContext })
+      });
+      const body = await response.json();
+      if (!response.ok || !body?.booking) {
+        this.bookingLookupError = String(body?.error || 'Could not sign the agreement. Please try again.');
+        return;
+      }
+      this.bookingLookupResult = body.booking;
+    } catch (error) {
+      console.error('Signing the agreement failed.', error);
+      this.bookingLookupError = 'Could not reach the booking service. Please try again.';
+    } finally {
+      this.bookingAgreementSignSubmitting = false;
+    }
+  }
+
+  async onPayBalance() {
+    if (!this.bookingLookupResult || !this.bookingLookupContext || this.bookingBalancePaySubmitting) return;
+    this.bookingBalancePaySubmitting = true;
+    this.bookingLookupError = '';
+    try {
+      const response = await fetch(`${this.api}/bookings/${this.bookingLookupResult.id}/balance-checkout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.bookingLookupContext)
+      });
+      const body = await response.json();
+      if (!response.ok || !body?.url) {
+        this.bookingLookupError = String(body?.error || 'Could not start checkout. Please try again.');
+        return;
+      }
+      window.location.href = body.url;
+    } catch (error) {
+      console.error('Balance checkout failed.', error);
+      this.bookingLookupError = 'Could not reach the booking service. Please try again.';
+    } finally {
+      this.bookingBalancePaySubmitting = false;
+    }
+  }
+
   // Invalidates the visitor-facing calendar cache after an admin action that
   // could change it (publish, block, unblock, manual booking, cancel) --
   // loadBookingSlots() repopulates it next time the visitor is on the Event
@@ -1220,14 +1448,18 @@ export class AppComponent implements OnInit {
     this.adminBookingError = '';
     try {
       const headers = { Authorization: `Bearer ${this.adminToken}` };
-      const [bookingsRes, slotsRes, blocksRes, unblocksRes, packagesRes] = await Promise.all([
+      const [bookingsRes, slotsRes, blocksRes, unblocksRes, packagesRes, waitlistRes, statsRes] = await Promise.all([
         fetch(`${this.api}/admin/bookings`, { headers }),
         fetch(`${this.api}/admin/booking/slots`, { headers }),
         fetch(`${this.api}/admin/booking/blocks`, { headers }),
         fetch(`${this.api}/admin/booking/unblocks`, { headers }),
-        fetch(`${this.api}/admin/booking/packages`, { headers })
+        fetch(`${this.api}/admin/booking/packages`, { headers }),
+        fetch(`${this.api}/admin/booking/waitlist`, { headers }),
+        fetch(`${this.api}/admin/bookings/stats`, { headers })
       ]);
-      if (!bookingsRes.ok || !slotsRes.ok || !blocksRes.ok || !unblocksRes.ok || !packagesRes.ok) throw new Error('Booking data unavailable');
+      if (!bookingsRes.ok || !slotsRes.ok || !blocksRes.ok || !unblocksRes.ok || !packagesRes.ok || !waitlistRes.ok || !statsRes.ok) {
+        throw new Error('Booking data unavailable');
+      }
       this.adminBookings = (await bookingsRes.json())?.bookings || [];
       this.adminSlots = (await slotsRes.json())?.slots || [];
       const packages = await packagesRes.json();
@@ -1235,6 +1467,8 @@ export class AppComponent implements OnInit {
       this.adminAddOns = Array.isArray(packages?.addOns) ? packages.addOns : [];
       this.adminBlocks = (await blocksRes.json())?.blocks || [];
       this.adminUnblocks = (await unblocksRes.json())?.unblocks || [];
+      this.adminWaitlist = (await waitlistRes.json())?.entries || [];
+      this.bookingStats = await statsRes.json();
     } catch (error) {
       console.error('Admin booking data could not be loaded.', error);
       this.adminBookingError = 'Could not load bookings.';
@@ -1458,6 +1692,51 @@ export class AppComponent implements OnInit {
 
   formatMoney(cents: number): string {
     return `$${((Number(cents) || 0) / 100).toFixed(2)}`;
+  }
+
+  // A rental-fee balance collected off-site (cash, check, money order) --
+  // the online path (bookingLookupComponent's "Pay remaining balance") marks
+  // this itself via the Stripe webhook, so this button is only for the rest.
+  async markBalancePaid(booking: any) {
+    if (!await this.requestConfirmation(`Mark the ${this.formatMoney(booking.balanceDue)} rental fee balance for ${booking.name} as paid?`, 'Mark balance paid')) return;
+    const response = await fetch(`${this.api}/admin/bookings/${encodeURIComponent(booking.id)}/balance/mark-paid`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.adminToken}` }
+    });
+    if (!response.ok) {
+      this.adminBookingError = String((await response.json())?.error || 'Could not mark the balance paid.');
+      return;
+    }
+    await this.loadAdminBookings();
+  }
+
+  async removeWaitlistEntry(entry: any) {
+    const response = await fetch(`${this.api}/admin/booking/waitlist/${encodeURIComponent(entry.id)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${this.adminToken}` }
+    });
+    if (response.ok) await this.loadAdminBookings();
+  }
+
+  async notifyWaitlistForDate(date: string) {
+    if (this.waitlistNotifySubmittingDate) return;
+    this.waitlistNotifySubmittingDate = date;
+    try {
+      const response = await fetch(`${this.api}/admin/booking/waitlist/${encodeURIComponent(date)}/notify`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.adminToken}` }
+      });
+      if (response.ok) await this.loadAdminBookings();
+    } finally {
+      this.waitlistNotifySubmittingDate = '';
+    }
+  }
+
+  // Bar heights as a percentage of the tallest month in the currently loaded
+  // window, so the chart always uses its full height regardless of scale.
+  statBarHeight(bookings: number, monthly: { bookings: number }[]): number {
+    const max = Math.max(1, ...monthly.map(month => month.bookings));
+    return Math.max(4, Math.round((bookings / max) * 100));
   }
 
   // The Rental Agreement is served as HTML, gated behind the admin bearer
@@ -1706,6 +1985,25 @@ export class AppComponent implements OnInit {
     } catch {
       this.inquiries = this.inquiries.map(inquiry => inquiry.id === inquiryId ? { ...inquiry, status: previous.status } : inquiry);
       this.inquiriesError = 'Network error while updating inquiry status.';
+    }
+  }
+  async deleteInquiry(inquiry: Inquiry) {
+    if (!this.adminToken) return;
+    if (!await this.requestConfirmation(`Delete the inquiry from ${inquiry.name}? This cannot be undone.`, 'Delete inquiry')) return;
+    try {
+      const response = await fetch(`${this.api}/admin/inquiries/${encodeURIComponent(inquiry.id)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${this.adminToken}` }
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        this.inquiriesError = body.error || 'Could not delete inquiry.';
+        return;
+      }
+      this.inquiries = this.inquiries.filter(item => item.id !== inquiry.id);
+      this.inquiriesError = '';
+    } catch {
+      this.inquiriesError = 'Network error while deleting inquiry.';
     }
   }
   formatInquiryDate(value: string) {

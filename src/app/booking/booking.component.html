@@ -68,9 +68,48 @@
       </div>
     </div>
 
+    <!-- A picked date is already taken -- offer to join its waitlist instead
+         of a dead end. -->
+    <div class="booking-times booking-request booking-waitlist" *ngIf="waitlistDateInput">
+      <div class="booking-times-head">
+        <h3>Waitlist for {{ formatDay(waitlistDateInput) }}</h3>
+        <button type="button" class="underlined" (click)="cancelWaitlist()">Clear</button>
+      </div>
+      <ng-container *ngIf="waitlistJoinedDate === waitlistDateInput; else waitlistFormTpl">
+        <p class="booking-times-hint">You're on the list for {{ formatDay(waitlistDateInput) }} -- we'll email you if it opens up.</p>
+      </ng-container>
+      <ng-template #waitlistFormTpl>
+        <p class="booking-times-hint">That day is already taken. Leave your details and we'll email you if it opens back up.</p>
+        <form class="booking-form" (ngSubmit)="submitWaitlist()">
+          <label>
+            Name
+            <input type="text" name="waitlistName" [(ngModel)]="waitlistForm.name" required autocomplete="name">
+          </label>
+          <label>
+            Email
+            <input type="email" name="waitlistEmail" [(ngModel)]="waitlistForm.email" required autocomplete="email">
+          </label>
+          <label>
+            Phone <span class="optional">optional</span>
+            <input type="tel" name="waitlistPhone" [(ngModel)]="waitlistForm.phone" autocomplete="tel">
+          </label>
+          <label>
+            Anything we should know <span class="optional">optional</span>
+            <textarea name="waitlistNotes" [(ngModel)]="waitlistForm.notes"></textarea>
+          </label>
+          <div class="booking-actions">
+            <button type="submit" class="booking-pay" [disabled]="waitlistSubmitting">
+              {{ waitlistSubmitting ? 'Joining...' : 'Join the waitlist' }}
+            </button>
+            <button type="button" class="booking-back" (click)="cancelWaitlist()" [disabled]="waitlistSubmitting">Cancel</button>
+          </div>
+        </form>
+      </ng-template>
+    </div>
+
     <!-- No slot exists yet for this date -- pay the deposit to provisionally
          hold it, and the server creates the slot at the flat event-space rate. -->
-    <div class="booking-times booking-request" *ngIf="requestDateInput">
+    <div class="booking-times booking-request" *ngIf="requestDateInput && !waitlistDateInput">
       <div class="booking-times-head">
         <h3>Request {{ formatDay(requestDateInput) }}</h3>
         <button type="button" class="underlined" (click)="cancelRequest()">Clear</button>

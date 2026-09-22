@@ -1,17 +1,17 @@
 <section id="rates" class="rates">
-  <p class="eyebrow">{{ content.eyebrow }}</p>
-  <h2>{{ content.heading }}</h2>
-  <p class="rates-intro">{{ content.intro }}</p>
+  <p class="eyebrow" [ngStyle]="style('rates.eyebrow')">{{ content.eyebrow }}</p>
+  <h2 [ngStyle]="style('rates.heading')">{{ content.heading }}</h2>
+  <p class="rates-intro" [ngStyle]="style('rates.intro')">{{ content.intro }}</p>
 
   <div class="rates-group" *ngFor="let group of itemGroups">
-    <h3 class="rates-group-heading" *ngIf="group.category">{{ group.category }}</h3>
+    <h3 class="rates-group-heading" [ngStyle]="style('rates.category')" *ngIf="group.category">{{ group.category }}</h3>
     <ul class="rates-items">
       <li *ngFor="let item of group.items">
         <div class="rates-item-info">
-          <b>{{ item.name }}</b>
-          <span *ngIf="item.detail">{{ item.detail }}</span>
+          <b [ngStyle]="style('rates.itemName')">{{ item.name }}</b>
+          <span [ngStyle]="style('rates.itemDetail')" *ngIf="item.detail">{{ item.detail }}</span>
         </div>
-        <span class="rates-item-price" *ngIf="item.price">{{ item.price }}</span>
+        <span class="rates-item-price" [ngStyle]="style('rates.itemPrice')" *ngIf="item.price">{{ item.price }}</span>
       </li>
     </ul>
   </div>

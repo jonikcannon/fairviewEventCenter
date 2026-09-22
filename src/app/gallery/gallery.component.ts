@@ -21,8 +21,8 @@ export class GalleryComponent {
   @Input() activeMediaKind: GalleryMediaKind = 'photos';
   @Input() tourUrl = '';
   // Self-hosted fallback shown when tourUrl (an embed) isn't set -- see
-  // PanoramaViewerComponent.
-  @Input() panoramaUrl = '';
+  // PanoramaViewerComponent. May hold more than one room.
+  @Input() panoramas: { label: string; image: string }[] = [];
   @Input() galleryLoading = true;
   @Input() galleryPrefetching = false;
   @Input() galleryPrefetchCount = 0;

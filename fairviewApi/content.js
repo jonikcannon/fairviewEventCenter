@@ -13,6 +13,10 @@ const defaults = {
     title: 'Fairview Community Center',
     description: 'Fairview Community Center — event spaces, bookings, and galleries for weddings, meetings, and celebrations.',
     contactEmail: 'hello@example.com',
+    // Optional -- shown in the footer and used for the site's structured
+    // data (schema.org EventVenue "telephone") when set. Empty means "don't
+    // publish a phone number."
+    phone: '',
     footerText: 'All rights reserved.',
     socialLinks: [],
     logo: ''
@@ -94,12 +98,35 @@ const defaults = {
       { name: 'Refundable Rental Deposit', detail: 'Required for all bookings', price: '$175.00', category: '' }
     ]
   },
-  tours: { communityCenter: '', panoramaImage: '' },
-  theme: { primary: '#26362e', background: '#f4f2ec', text: '#1f211d' }
+  // `panoramas` supports multiple rooms/views; each is shown in a labeled
+  // tab. Falls back to a single "Venue" room migrated from the pre-multi-room
+  // `panoramaImage` field on read (see readContent's migration step).
+  tours: { communityCenter: '', panoramas: [] },
+  theme: { primary: '#26362e', background: '#f4f2ec', text: '#1f211d' },
+  // Per-field font overrides, e.g. { 'about.body': { size: 18, font: 'georgia' } }.
+  // Empty means every field uses the stylesheet's own size and font.
+  textStyles: {}
 };
+
+// Ids the admin may style, and the fonts they may pick. Fonts are stored as
+// ids and mapped to real CSS stacks in the frontend (src/app/text-style.ts),
+// so a saved value can never carry arbitrary CSS. Keep both lists in sync.
+const textStyleKeys = [
+  'site.brand', 'navigation.label',
+  'hero.eyebrow', 'hero.headline', 'hero.intro', 'hero.ctaLabel',
+  'statement.eyebrow', 'statement.heading', 'statement.copy',
+  'about.eyebrow', 'about.heading', 'about.body', 'about.ctaLabel',
+  'about.featureTitle', 'about.featureDescription', 'about.featurePrice',
+  'rates.eyebrow', 'rates.heading', 'rates.intro',
+  'rates.category', 'rates.itemName', 'rates.itemDetail', 'rates.itemPrice',
+  'contact.eyebrow', 'contact.heading', 'contact.email', 'contact.address',
+  'contact.faqQuestion', 'contact.faqAnswer'
+];
+const textFontIds = ['georgia', 'times', 'palatino', 'arial', 'verdana', 'trebuchet', 'courier'];
 
 const maxLengths = {
   brand: 80, title: 120, description: 320, contactEmail: 254, footerText: 180,
+  phone: 40,
   eyebrow: 100, headline: 180, intro: 500, ctaLabel: 80, heading: 180, copy: 600,
   paragraph: 1200, label: 60, media: 300, serviceName: 100, serviceText: 600,
   workTitle: 120, category: 80, featureTitle: 80, featureText: 400,
@@ -158,12 +185,13 @@ function assertKeys(value, allowed, field) {
 
 function validateContent(input) {
   if (!isPlainObject(input)) throw new Error('Content must be an object.');
-  assertKeys(input, ['site', 'navigation', 'hero', 'statement', 'about', 'contact', 'rates', 'tours', 'theme'], 'content');
+  assertKeys(input, ['site', 'navigation', 'hero', 'statement', 'about', 'contact', 'rates', 'tours', 'theme', 'textStyles'], 'content');
 
   const site = input.site;
   if (!isPlainObject(site)) throw new Error('site must be an object.');
-  assertKeys(site, ['brand', 'title', 'description', 'contactEmail', 'footerText', 'socialLinks', 'logo'], 'site');
+  assertKeys(site, ['brand', 'title', 'description', 'contactEmail', 'phone', 'footerText', 'socialLinks', 'logo'], 'site');
   for (const field of ['brand', 'title', 'description', 'contactEmail', 'footerText']) assertString(site[field], maxLengths[field], `site.${field}`, field !== 'footerText');
+  assertString(site.phone || '', maxLengths.phone, 'site.phone');
   assertMediaReference(site.logo, 'site.logo');
   if (!Array.isArray(site.socialLinks) || site.socialLinks.length > 8) throw new Error('site.socialLinks is invalid.');
   for (const link of site.socialLinks) {
@@ -265,9 +293,15 @@ function validateContent(input) {
 
   const tours = input.tours;
   if (!isPlainObject(tours)) throw new Error('tours must be an object.');
-  assertKeys(tours, ['communityCenter', 'panoramaImage'], 'tours');
+  assertKeys(tours, ['communityCenter', 'panoramas'], 'tours');
   assertEmbedUrl(tours.communityCenter, 'tours.communityCenter');
-  assertMediaReference(tours.panoramaImage, 'tours.panoramaImage');
+  if (!Array.isArray(tours.panoramas) || tours.panoramas.length > 12) throw new Error('tours.panoramas is invalid.');
+  for (const room of tours.panoramas) {
+    if (!isPlainObject(room)) throw new Error('Each panorama room must be an object.');
+    assertKeys(room, ['label', 'image'], 'tours.panoramas[]');
+    assertString(room.label, maxLengths.label, 'panorama room label', true);
+    assertMediaReference(room.image, 'panorama room image');
+  }
 
   const theme = input.theme;
   if (!isPlainObject(theme)) throw new Error('theme must be an object.');
@@ -275,7 +309,38 @@ function validateContent(input) {
   assertHexColor(theme.primary, 'theme.primary');
   assertHexColor(theme.background, 'theme.background');
   assertHexColor(theme.text, 'theme.text');
+
+  // Optional so content written before this field existed still validates.
+  const textStyles = input.textStyles === undefined ? {} : input.textStyles;
+  if (!isPlainObject(textStyles)) throw new Error('textStyles must be an object.');
+  assertKeys(textStyles, textStyleKeys, 'textStyles');
+  for (const [key, style] of Object.entries(textStyles)) {
+    if (!isPlainObject(style)) throw new Error(`textStyles.${key} is invalid.`);
+    assertKeys(style, ['size', 'font'], `textStyles.${key}`);
+    if (style.size !== undefined) assertNumberInRange(style.size, 8, 120, `textStyles.${key}.size`);
+    if (style.font !== undefined && !textFontIds.includes(style.font)) {
+      throw new Error(`textStyles.${key}.font must be one of: ${textFontIds.join(', ')}.`);
+    }
+  }
   return input;
+}
+
+// One-time upgrade, in place, from the single-image `tours.panoramaImage`
+// field (pre-multi-room) to the `tours.panoramas` array. A file saved under
+// the old schema still has `panoramaImage` sitting alongside the new
+// `panoramas` key after mergeContent (merge adds/overrides by key, it doesn't
+// drop keys the new defaults no longer have), and validateContent's
+// assertKeys would reject that leftover key outright -- so this must both
+// migrate a real value across and always delete the old key, whether or not
+// there was anything to migrate.
+function migrateLegacyTours(content) {
+  const tours = content.tours;
+  if (!tours || typeof tours !== 'object') return;
+  const legacyImage = tours.panoramaImage;
+  if (legacyImage && (!Array.isArray(tours.panoramas) || !tours.panoramas.length)) {
+    tours.panoramas = [{ label: 'Venue', image: legacyImage }];
+  }
+  delete tours.panoramaImage;
 }
 
 function readContent() {
@@ -292,6 +357,7 @@ function readContent() {
     // post-merge or assertKeys rejects them as top-level content fields.
     const { revision: _r, updatedAt: _u, ...defaultsContentOnly } = defaults;
     const merged = mergeContent(defaultsContentOnly, parsed);
+    migrateLegacyTours(merged);
     return { ...validateContent(merged), revision: Number(revision) || 0, updatedAt: updatedAt || '' };
   } catch (error) {
     console.error('Failed to read site content; using defaults.', error.message || error);

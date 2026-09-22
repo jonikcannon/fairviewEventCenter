@@ -8,7 +8,7 @@ const bcrypt = require('bcryptjs');
 const Stripe = require('stripe');
 const { google } = require('googleapis');
 const nodemailer = require('nodemailer');
-const { randomUUID } = require('crypto');
+const { randomUUID, timingSafeEqual } = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { Readable } = require('stream');
@@ -50,6 +50,7 @@ const orderStore = require('./orders');
 const fulfilment = require('./fulfilment');
 const bookingStore = require('./booking');
 const rentalAgreement = require('./rentalAgreement');
+const ics = require('./ics');
 const siteContent = require('./content');
 orderStore.ensureStore();
 bookingStore.ensureStore();
@@ -245,6 +246,107 @@ async function sendBookingEmails(booking) {
   return Boolean(booking.email);
 }
 
+async function sendBalancePaidEmail(booking) {
+  const transporter = getMailer();
+  const from = String(process.env.CONTACT_FROM_EMAIL || process.env.SMTP_USER || '').trim();
+  const studio = String(process.env.CONTACT_TO_EMAIL || process.env.ADMIN_EMAIL || '').trim();
+  if (!transporter || !from || !booking.email) return false;
+
+  await transporter.sendMail({
+    from,
+    to: booking.email,
+    replyTo: studio || undefined,
+    subject: `Payment received -- your Fairview Event Center rental (${booking.date})`,
+    text: [
+      `Thank you ${booking.name || ''}`.trim() + ',',
+      '',
+      `We've received your rental fee payment of ${formatMoney(booking.sessionFee)} for ${booking.date}.`,
+      'Your balance is now paid in full. See you then!',
+      '',
+      `Reference: ${booking.id}`
+    ].join('\n')
+  });
+  return true;
+}
+
+// Sent once, a configurable number of days before the event, to a confirmed
+// booking that still has an unpaid rental-fee balance -- see
+// runScheduledBookingTasks and bookingStore.listBookingsNeedingBalanceReminder.
+async function sendBalanceReminderEmail(booking) {
+  const transporter = getMailer();
+  const from = String(process.env.CONTACT_FROM_EMAIL || process.env.SMTP_USER || '').trim();
+  const studio = String(process.env.CONTACT_TO_EMAIL || process.env.ADMIN_EMAIL || '').trim();
+  if (!transporter || !from || !booking.email) return false;
+
+  await transporter.sendMail({
+    from,
+    to: booking.email,
+    replyTo: studio || undefined,
+    subject: `Balance due soon -- your Fairview Event Center rental (${booking.date})`,
+    text: [
+      `Hi ${booking.name || ''}`.trim() + ',',
+      '',
+      `Your event is coming up on ${booking.date}. The rental fee balance of ${formatMoney(booking.balanceDue)} is due 30 days before the event.`,
+      '',
+      `Look up your booking and pay online: ${origin.replace(/\/$/, '')}/?booking=lookup`,
+      `Confirmation code: ${booking.confirmationCode || ''}`,
+      '',
+      'Cash, cashier\'s check, money order, personal check, and card are all accepted -- see your rental agreement for full terms.'
+    ].join('\n')
+  });
+  return true;
+}
+
+// Sent once, a configurable number of days after the event, asking for a
+// review/testimonial. Best-effort only -- there is no unsubscribe mechanism
+// beyond the mailer's own list-unsubscribe handling, so keep this to a single
+// send per booking (see reviewRequestSentAt).
+async function sendReviewRequestEmail(booking) {
+  const transporter = getMailer();
+  const from = String(process.env.CONTACT_FROM_EMAIL || process.env.SMTP_USER || '').trim();
+  const studio = String(process.env.CONTACT_TO_EMAIL || process.env.ADMIN_EMAIL || '').trim();
+  if (!transporter || !from || !booking.email) return false;
+
+  await transporter.sendMail({
+    from,
+    to: booking.email,
+    replyTo: studio || undefined,
+    subject: 'How was your event at Fairview Event Center?',
+    text: [
+      `Hi ${booking.name || ''}`.trim() + ',',
+      '',
+      'Thank you again for hosting your event with us. We would love to hear how it went --',
+      'reply to this email with a few words, and let us know if we can help with anything for next time.',
+      '',
+      `Reference: ${booking.id}`
+    ].join('\n')
+  });
+  return true;
+}
+
+async function sendWaitlistNotifyEmail(entry) {
+  const transporter = getMailer();
+  const from = String(process.env.CONTACT_FROM_EMAIL || process.env.SMTP_USER || '').trim();
+  const studio = String(process.env.CONTACT_TO_EMAIL || process.env.ADMIN_EMAIL || '').trim();
+  if (!transporter || !from || !entry.email) return false;
+
+  await transporter.sendMail({
+    from,
+    to: entry.email,
+    replyTo: studio || undefined,
+    subject: `${entry.date} is open at Fairview Event Center`,
+    text: [
+      `Hi ${entry.name || ''}`.trim() + ',',
+      '',
+      `You asked to be notified if ${entry.date} opened up -- it's bookable again.`,
+      'Dates are first-come, first-served, so head to the Booking page to reserve it if you would still like it.',
+      '',
+      `${origin.replace(/\/$/, '')}/?section=booking`
+    ].join('\n')
+  });
+  return true;
+}
+
 // Runs after payment. Split so a webhook retry can re-run only the part that
 // has not succeeded yet.
 async function fulfilOrder(order) {
@@ -264,6 +366,26 @@ async function fulfilOrder(order) {
         });
       } catch (error) {
         console.error('Booking confirmation email failed:', error?.message || error);
+        orderStore.setDelivery(current.id, { status: orderStore.FULFILMENT.FAILED, error: String(error?.message || error) });
+      }
+    }
+    return orderStore.findOrderById(current.id) || current;
+  }
+
+  if (current.kind === 'booking-balance') {
+    const bookingId = String(current.metadata?.bookingId || '');
+    // markBalancePaid is idempotent, so a webhook retry cannot double-mark it.
+    const paid = bookingStore.markBalancePaid(bookingId, { orderId: current.id });
+    if (paid && paid.balanceOrderId === current.id) {
+      try {
+        const sent = await sendBalancePaidEmail(paid);
+        orderStore.setDelivery(current.id, {
+          status: sent ? orderStore.FULFILMENT.FULFILLED : orderStore.FULFILMENT.FAILED,
+          sentAt: sent ? new Date().toISOString() : '',
+          error: sent ? '' : 'No mailer configured or no client email on the booking.'
+        });
+      } catch (error) {
+        console.error('Balance payment confirmation email failed:', error?.message || error);
         orderStore.setDelivery(current.id, { status: orderStore.FULFILMENT.FAILED, error: String(error?.message || error) });
       }
     }
@@ -892,6 +1014,9 @@ app.patch('/api/admin/content', auth, (req, res) => {
   try {
     const current = siteContent.readContent();
     const next = siteContent.mergeContent(current, req.body || {});
+    // mergeContent deep-merges, which would make a cleared font override
+    // impossible to remove; the client always sends the complete set.
+    if (req.body && req.body.textStyles !== undefined) next.textStyles = req.body.textStyles;
     const saved = siteContent.writeContent(next);
     return res.json({ content: saved });
   } catch (error) {
@@ -936,6 +1061,18 @@ app.patch('/api/admin/inquiries/:id', auth, (req, res) => {
 
   if (!updated) return res.status(404).json({ error: 'Inquiry not found.' });
   return res.json({ inquiry: updated });
+});
+
+app.delete('/api/admin/inquiries/:id', auth, (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'Inquiry id is required.' });
+
+  const inquiries = readInquiries();
+  const remaining = inquiries.filter(inquiry => inquiry.id !== id);
+  if (remaining.length === inquiries.length) return res.status(404).json({ error: 'Inquiry not found.' });
+
+  writeInquiries(remaining);
+  return res.json({ ok: true });
 });
 
 app.post('/api/admin/products', auth, async (req, res) => {
@@ -1807,6 +1944,271 @@ app.post('/api/admin/bookings/:id/cancel', auth, (req, res) => {
   res.json({ booking: { ...cancelled, refundable: bookingStore.isRefundable(booking) } });
 });
 
+// ---------------------------------------------------- guest booking lookup
+// A customer's own view of a booking they already made, gated on knowing
+// BOTH the confirmation code shown at booking time and the email address
+// used -- no account/login system exists, so this pair stands in for one.
+function publicBookingView(booking) {
+  return {
+    id: booking.id,
+    confirmationCode: booking.confirmationCode,
+    date: booking.date,
+    status: booking.status,
+    agreedTime: booking.agreedTime || '',
+    name: booking.name,
+    email: booking.email,
+    eventDescription: booking.eventDescription || '',
+    guestCount: booking.guestCount || '',
+    packageName: booking.packageName,
+    addOns: booking.addOns || [],
+    sessionFee: booking.sessionFee,
+    deposit: booking.deposit,
+    balanceDue: booking.balanceDue,
+    balancePaid: Boolean(booking.balancePaidAt),
+    agreementSigned: Boolean(booking.agreementSignedName),
+    refundPolicy: booking.refundPolicy,
+    refundable: bookingStore.isRefundable(booking)
+  };
+}
+
+app.post('/api/bookings/lookup', rateLimit({ windowMs: 900000, max: 20, message: { error: 'Too many lookup attempts. Please try again shortly.' } }), (req, res) => {
+  const booking = bookingStore.findBookingByConfirmation(req.body?.confirmationCode, req.body?.email);
+  if (!booking) return res.status(404).json({ error: 'No booking found for that email and confirmation code.' });
+  res.json({ booking: publicBookingView(booking) });
+});
+
+// Re-verifies the code+email pair rather than trusting the booking id alone
+// (an unguessable UUID, but this keeps every public booking action gated the
+// same way instead of some routes trusting the id by itself).
+function requireBookingMatch(req, res) {
+  const booking = bookingStore.findBookingByConfirmation(req.body?.confirmationCode || req.query?.confirmationCode, req.body?.email || req.query?.email);
+  if (!booking || booking.id !== String(req.params.id || '')) {
+    res.status(404).json({ error: 'No booking found for that email and confirmation code.' });
+    return null;
+  }
+  return booking;
+}
+
+app.post('/api/bookings/:id/agreement/sign', rateLimit({ windowMs: 900000, max: 10, message: { error: 'Too many attempts. Please try again shortly.' } }), (req, res) => {
+  const booking = requireBookingMatch(req, res);
+  if (!booking) return;
+  const result = bookingStore.signAgreement(booking.id, { name: req.body?.name, ip: req.ip });
+  if (result.error) return res.status(result.status || 400).json({ error: result.error });
+  res.json({ booking: publicBookingView(result.booking) });
+});
+
+// The customer's own view of their rental agreement -- same renderer as the
+// admin route, gated the same way as the rest of this section instead of an
+// admin bearer token.
+app.get('/api/bookings/:id/agreement', (req, res) => {
+  const booking = requireBookingMatch(req, res);
+  if (!booking) return;
+  if (booking.status !== 'confirmed') return res.status(409).json({ error: 'This booking has no paid reservation fee yet.' });
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.send(rentalAgreement.generateAgreementHtml(booking));
+});
+
+app.get('/api/bookings/:id/calendar.ics', (req, res) => {
+  const booking = requireBookingMatch(req, res);
+  if (!booking) return;
+  res.set('Content-Type', 'text/calendar; charset=utf-8');
+  res.set('Content-Disposition', `attachment; filename="fairview-event-center-${booking.date}.ics"`);
+  res.send(ics.buildCalendar([booking], { calendarName: `Fairview Event Center -- ${booking.date}` }));
+});
+
+// Pays the remaining rental-fee balance online by card -- see the Payment
+// Terms clause in rentalAgreement.js, which lists card as an accepted method
+// alongside cash/check/money order. Only available once the reservation fee
+// is confirmed and the balance is not already paid (online or by the admin
+// marking an off-site payment).
+app.post('/api/bookings/:id/balance-checkout', rateLimit({ windowMs: 900000, max: 20, message: { error: 'Too many attempts. Please try again shortly.' } }), async (req, res) => {
+  const booking = requireBookingMatch(req, res);
+  if (!booking) return;
+  if (booking.status !== 'confirmed') return res.status(409).json({ error: 'This booking has no confirmed reservation yet.' });
+  if (booking.balancePaid) return res.status(409).json({ error: 'The balance has already been paid.' });
+  if (!stripe) return res.status(503).json({ error: 'Stripe is not configured yet.' });
+
+  const order = orderStore.createPendingOrder({
+    kind: 'booking-balance',
+    email: booking.email,
+    items: [{
+      productId: '',
+      sku: `BOOKING-BALANCE-${booking.date}`,
+      title: `Event space rental balance (${booking.date})`,
+      mediaType: 'image',
+      imageKey: '',
+      quantity: 1,
+      unitAmount: booking.balanceDue,
+      orderType: 'booking-balance',
+      isPrint: false,
+      printSize: '',
+      printUnitPrice: 0,
+      deliverDigital: false,
+      downloads: 0
+    }],
+    metadata: { bookingId: booking.id }
+  });
+
+  let session;
+  try {
+    session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [{
+        quantity: 1,
+        price_data: {
+          currency: 'usd',
+          unit_amount: booking.balanceDue,
+          product_data: {
+            name: 'Event space rental balance',
+            description: `Remaining rental fee balance for ${booking.date}.`
+          }
+        }
+      }],
+      metadata: { orderId: order.id, bookingId: booking.id },
+      client_reference_id: order.id,
+      customer_email: booking.email,
+      success_url: `${origin}/?booking=balance-paid`,
+      cancel_url: `${origin}/?booking=balance-cancel`
+    });
+  } catch (error) {
+    console.error('Stripe balance checkout failed:', error?.message || error);
+    return res.status(502).json({ error: 'Could not start checkout. Please try again.' });
+  }
+
+  orderStore.attachSession(order.id, session.id);
+  res.json({ url: session.url });
+});
+
+// Interest in a date that's currently unavailable (blocked or taken) -- see
+// bookingStore.joinWaitlist. Public and unauthenticated, rate-limited like the
+// other booking-form endpoints.
+app.post('/api/booking/waitlist', rateLimit({ windowMs: 900000, max: 20, message: { error: 'Too many attempts. Please try again shortly.' } }), (req, res) => {
+  const result = bookingStore.joinWaitlist({
+    date: req.body?.date,
+    name: req.body?.name,
+    email: req.body?.email,
+    phone: req.body?.phone,
+    notes: req.body?.notes
+  });
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.status(201).json({ ok: true });
+});
+
+app.get('/api/admin/booking/waitlist', auth, (req, res) => {
+  res.json({ entries: bookingStore.listWaitlist({ date: String(req.query.date || '').trim() }) });
+});
+
+app.delete('/api/admin/booking/waitlist/:id', auth, (req, res) => {
+  const removed = bookingStore.removeWaitlistEntry(String(req.params.id || ''));
+  if (removed.error) return res.status(removed.status || 400).json({ error: removed.error });
+  res.json({ ok: true });
+});
+
+// Emails everyone currently waiting on a date, then marks them notified --
+// meant for after the admin frees the day up (deletes a block/slot, adds an
+// unblock exception, or cancels the booking that was sitting on it).
+app.post('/api/admin/booking/waitlist/:date/notify', auth, async (req, res) => {
+  const date = String(req.params.date || '').trim();
+  const entries = bookingStore.listWaitlist({ date }).filter(entry => !entry.notifiedAt);
+  if (!entries.length) return res.json({ notified: 0 });
+
+  let sent = 0;
+  for (const entry of entries) {
+    try {
+      if (await sendWaitlistNotifyEmail(entry)) sent += 1;
+    } catch (error) {
+      console.error('Waitlist notify email failed:', error?.message || error);
+    }
+  }
+  bookingStore.markWaitlistNotified(date);
+  res.json({ notified: sent });
+});
+
+app.post('/api/admin/bookings/:id/balance/mark-paid', auth, (req, res) => {
+  const result = bookingStore.markBalancePaidManually(String(req.params.id || ''));
+  if (result.error) return res.status(result.status || 400).json({ error: result.error });
+  res.json({ booking: result.booking });
+});
+
+// Monthly bookings/revenue for the admin dashboard -- confirmed bookings
+// only (a pending/cancelled booking collected nothing), grouped by the month
+// the reservation was confirmed. Revenue is reservation fees actually
+// collected online/manually plus any rental-fee balance paid so far, not the
+// full sessionFee for a balance still outstanding.
+app.get('/api/admin/bookings/stats', auth, (req, res) => {
+  const bookings = bookingStore.readBookings().filter(booking => booking.status === 'confirmed');
+  const months = new Map();
+  const monthKey = value => String(value || '').slice(0, 7);
+  for (const booking of bookings) {
+    const key = monthKey(booking.confirmedAt || booking.createdAt);
+    if (!key) continue;
+    const bucket = months.get(key) || { month: key, bookings: 0, revenueCents: 0 };
+    bucket.bookings += 1;
+    bucket.revenueCents += (Number(booking.deposit) || 0) + (booking.balancePaidAt ? (Number(booking.sessionFee) || 0) : 0);
+    months.set(key, bucket);
+  }
+  const monthly = Array.from(months.values()).sort((left, right) => left.month.localeCompare(right.month)).slice(-12);
+  const today = bookingStore.today();
+  res.json({
+    monthly,
+    totals: {
+      confirmedBookings: bookings.length,
+      revenueCents: bookings.reduce((sum, booking) => sum + (Number(booking.deposit) || 0) + (booking.balancePaidAt ? (Number(booking.sessionFee) || 0) : 0), 0),
+      upcomingBookings: bookings.filter(booking => booking.date >= today).length,
+      outstandingBalanceCents: bookings.filter(booking => !booking.balancePaidAt).reduce((sum, booking) => sum + (Number(booking.sessionFee) || 0), 0)
+    }
+  });
+});
+
+// Subscribable .ics feed of every confirmed, upcoming booking -- meant to be
+// added to Google/Apple/Outlook calendar as a URL, which means it cannot carry
+// an Authorization header the way the rest of /api/admin does. Gated by a
+// separate static token (ADMIN_CALENDAR_TOKEN) instead; treat that token like
+// a password; it can view (not modify) every future booking's basic details.
+app.get('/api/admin/bookings/calendar.ics', (req, res) => {
+  const expected = String(process.env.ADMIN_CALENDAR_TOKEN || '').trim();
+  const supplied = String(req.query.token || '').trim();
+  const expectedBuf = Buffer.from(expected);
+  const suppliedBuf = Buffer.from(supplied);
+  const valid = Boolean(expected) && expectedBuf.length === suppliedBuf.length && timingSafeEqual(expectedBuf, suppliedBuf);
+  if (!valid) return res.status(401).send('Invalid or missing calendar token.');
+
+  const today = bookingStore.today();
+  const bookings = bookingStore.readBookings().filter(booking => booking.status === 'confirmed' && booking.date >= today);
+  res.set('Content-Type', 'text/calendar; charset=utf-8');
+  res.send(ics.buildCalendar(bookings));
+});
+
+// Runs the balance-reminder and post-event review-request sweeps. Called once
+// at startup and then on an hourly timer (see the bottom of this file) rather
+// than a real cron dependency -- the process is already long-running under
+// PM2 (see booking.js's concurrency note), so a periodic in-process check is
+// enough and needs nothing extra provisioned.
+async function runScheduledBookingTasks() {
+  const reminderDays = Number(process.env.BOOKING_BALANCE_REMINDER_DAYS);
+  const daysBefore = Number.isFinite(reminderDays) && reminderDays > 0 ? reminderDays : 20;
+  for (const booking of bookingStore.listBookingsNeedingBalanceReminder(daysBefore)) {
+    try {
+      const sent = await sendBalanceReminderEmail(booking);
+      if (sent) bookingStore.markReminderSent(booking.id);
+    } catch (error) {
+      console.error(`Balance reminder email failed for booking ${booking.id}:`, error?.message || error);
+    }
+  }
+
+  const reviewDays = Number(process.env.BOOKING_REVIEW_REQUEST_DAYS);
+  const daysAfter = Number.isFinite(reviewDays) && reviewDays >= 0 ? reviewDays : 3;
+  for (const booking of bookingStore.listBookingsNeedingReviewRequest(daysAfter)) {
+    try {
+      const sent = await sendReviewRequestEmail(booking);
+      if (sent) bookingStore.markReviewRequestSent(booking.id);
+    } catch (error) {
+      console.error(`Review request email failed for booking ${booking.id}:`, error?.message || error);
+    }
+  }
+}
+
 // Signed download of a purchased master. The token names the order and line
 // item, so it grants exactly one file and nothing else.
 app.get('/api/download/:token', async (req, res) => {
@@ -1998,6 +2400,13 @@ process.on('unhandledRejection', (reason) => {
 // directly and forge X-Forwarded-For past the rate limiters above.
 const bindHost = process.env.BIND_HOST || '127.0.0.1';
 app.listen(port, bindHost, () => console.log(`Fairview API running on http://${bindHost}:${port}`));
+
+// Fires once shortly after startup (a restart shouldn't wait a full hour for
+// the first sweep) and then hourly. Errors inside are already caught per-
+// booking in runScheduledBookingTasks, so a single bad row can't stop the
+// sweep or crash the interval.
+setTimeout(() => { runScheduledBookingTasks().catch(error => console.error('Scheduled booking tasks failed:', error?.message || error)); }, 15000);
+setInterval(() => { runScheduledBookingTasks().catch(error => console.error('Scheduled booking tasks failed:', error?.message || error)); }, 3600000);
 console.log(isCdnEnabled()
   ? `Gallery media: CDN (${r2Config.cdnUrl})`
   : 'Gallery media: local disk');

@@ -43,7 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 15); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/products || true)
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3500/api/products || true)
             if [ "$code" = "200" ]; then
               echo "API healthy (HTTP $code) after ${attempt} attempt(s)."
               exit 0

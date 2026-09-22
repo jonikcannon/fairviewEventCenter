@@ -1,4 +1,7 @@
 :host{display:block}
+.pano-rooms{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.pano-rooms button{border:1px solid #d3d4cb;background:#faf9f7;color:#3d4a42;padding:8px 14px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:bold;cursor:pointer;border-radius:999px}
+.pano-rooms button.active{background:var(--color-primary,#26362e);border-color:var(--color-primary,#26362e);color:#fff}
 .pano-viewport{position:relative;width:100%;aspect-ratio:16/9;overflow:hidden;background:#000;border-radius:4px;cursor:grab;touch-action:none}
 .pano-viewport.dragging{cursor:grabbing}
 .pano-viewport img{position:absolute;top:50%;left:50%;max-width:none;user-select:none;-webkit-user-drag:none}

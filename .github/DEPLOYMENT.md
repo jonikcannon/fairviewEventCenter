@@ -2,7 +2,7 @@
 
 The Angular site and the Express API run together on one Ubuntu server
 (`utctigers@192.168.4.55`): Nginx serves the built app and proxies `/api/` to the
-PM2-managed Express process on port 3000.
+PM2-managed Express process on port 3500 (see `scripts/deploy/ecosystem.config.cjs`).
 
 ## Why a self-hosted runner
 

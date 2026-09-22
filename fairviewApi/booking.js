@@ -29,6 +29,7 @@ const slotsFile = path.join(bookingDir, 'slots.jsonl');
 const bookingsFile = path.join(bookingDir, 'bookings.jsonl');
 const blocksFile = path.join(bookingDir, 'blocks.jsonl');
 const unblocksFile = path.join(bookingDir, 'unblocks.jsonl');
+const waitlistFile = path.join(bookingDir, 'waitlist.jsonl');
 
 const SLOT = Object.freeze({ OPEN: 'open', HELD: 'held', BOOKED: 'booked', BLOCKED: 'blocked' });
 const BOOKING = Object.freeze({ PENDING: 'pending', CONFIRMED: 'confirmed', CANCELLED: 'cancelled', EXPIRED: 'expired' });
@@ -194,10 +195,24 @@ const readSlots = () => readFile(slotsFile);
 const readBookings = () => readFile(bookingsFile);
 const readBlocks = () => readFile(blocksFile);
 const readUnblocks = () => readFile(unblocksFile);
+const readWaitlist = () => readFile(waitlistFile);
 const writeSlots = rows => writeFile(slotsFile, rows);
 const writeBookings = rows => writeFile(bookingsFile, rows);
 const writeBlocks = rows => writeFile(blocksFile, rows);
 const writeUnblocks = rows => writeFile(unblocksFile, rows);
+const writeWaitlist = rows => writeFile(waitlistFile, rows);
+
+// Short, human-typeable code a customer can read off a confirmation email and
+// type back in on the booking-lookup page -- paired with their email address
+// so a code alone (8 chars, not a secret-strength token) can't be brute-forced
+// into someone else's booking. Excludes visually ambiguous characters
+// (0/O, 1/I/L) since it's meant to be read off a screen or printout by hand.
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+function generateConfirmationCode() {
+  let code = '';
+  for (let i = 0; i < 8; i += 1) code += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+  return code;
+}
 
 function appendFileRow(file, row) {
   ensureStore();
@@ -534,6 +549,11 @@ function holdSlot(slotId, { name, email, phone = '', notes = '', address = '', e
   const guests = Math.max(0, Math.round(Number(guestCount) || 0));
   const booking = appendBooking({
     id: randomUUID(),
+    // Paired with email on the public booking-lookup form (see
+    // findBookingByConfirmation) so a customer can look up their own booking,
+    // view/sign the agreement, pull an .ics file, or pay the balance without
+    // an admin login.
+    confirmationCode: generateConfirmationCode(),
     slotId: slot.id,
     date: slot.date,
     // The admin's override for the agreed arrival/start time, set after booking.
@@ -559,6 +579,21 @@ function holdSlot(slotId, { name, email, phone = '', notes = '', address = '', e
     // The reservation fee is paid on top of the rental fee, not a prepayment
     // against it (see reservationFee()) -- the full rental fee is still due.
     balanceDue: sessionFee,
+    // Set once the rental fee balance is paid online (see balance-checkout in
+    // server.js). Cash/check/money-order payments collected off-site are
+    // recorded by the admin instead -- see markBalancePaidManually.
+    balancePaidAt: '',
+    balanceOrderId: '',
+    // Typed-signature acceptance of the rental agreement -- see signAgreement.
+    agreementSignedName: '',
+    agreementSignedAt: '',
+    agreementSignedIp: '',
+    // Idempotency markers for the scheduled reminder/review-request emails
+    // (see listBookingsNeedingBalanceReminder/listBookingsNeedingReviewRequest
+    // in this file and runScheduledBookingTasks in server.js) -- each must
+    // fire at most once per booking.
+    reminderSentAt: '',
+    reviewRequestSentAt: '',
     // Frozen at booking time: changing the policy later must not rewrite the
     // terms this customer accepted.
     refundPolicy: refundPolicyText(),
@@ -622,6 +657,7 @@ function createManualBooking({ date, location = '', name, email = '', phone = ''
 
   const booking = appendBooking({
     id: randomUUID(),
+    confirmationCode: generateConfirmationCode(),
     slotId,
     date: day,
     agreedTime: '',
@@ -641,6 +677,13 @@ function createManualBooking({ date, location = '', name, email = '', phone = ''
     // The reservation fee is paid on top of the rental fee, not a prepayment
     // against it (see reservationFee()) -- the full rental fee is still due.
     balanceDue: fee,
+    balancePaidAt: '',
+    balanceOrderId: '',
+    agreementSignedName: '',
+    agreementSignedAt: '',
+    agreementSignedIp: '',
+    reminderSentAt: '',
+    reviewRequestSentAt: '',
     refundPolicy: refundPolicyText(),
     refundCutoffHours: refundCutoffHours(),
     orderId: '',
@@ -754,6 +797,163 @@ function isRefundable(booking, now = Date.now()) {
   return now - bookedAt <= hours * 3600000;
 }
 
+// Days between two YYYY-MM-DD calendar keys, local-time (see parseDateKey's
+// comment on why this is never done as a UTC millisecond subtraction).
+function daysBetween(fromDate, toDate) {
+  const ms = parseDateKey(toDate).getTime() - parseDateKey(fromDate).getTime();
+  return Math.round(ms / 86400000);
+}
+
+// A customer's own lookup of their booking: requires both the confirmation
+// code AND the email on file, so an 8-character code alone (short enough to
+// occasionally guess) can't be used to pull up a stranger's booking. Matches
+// case-insensitively since codes are shown uppercase but customers may retype
+// them lowercase, and finds only the most recent non-cancelled booking for a
+// date/code pair (a re-booked date could otherwise have more than one row).
+function findBookingByConfirmation(code, email) {
+  const wantedCode = String(code || '').trim().toUpperCase();
+  const wantedEmail = String(email || '').trim().toLowerCase();
+  if (!wantedCode || !wantedEmail) return null;
+  const matches = readBookings().filter(booking => (
+    String(booking.confirmationCode || '').toUpperCase() === wantedCode &&
+    String(booking.email || '').toLowerCase() === wantedEmail
+  ));
+  if (!matches.length) return null;
+  return matches.sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))[0];
+}
+
+// Typed-signature acceptance: not a drawn/cryptographic signature, just a
+// timestamped, IP-logged record that the named person affirmatively agreed
+// to the rendered agreement text, alongside the existing print-and-sign
+// option. Idempotent by design -- once signed, the name/date on file is what
+// counts, so a repeat submission is rejected rather than silently overwritten
+// by whoever submits the form last.
+function signAgreement(bookingId, { name, ip }) {
+  const booking = findBooking(bookingId);
+  if (!booking) return { error: 'Booking not found.', status: 404 };
+  if (booking.status !== BOOKING.CONFIRMED) return { error: 'This booking has no paid reservation fee yet.', status: 409 };
+  if (booking.agreementSignedName) return { error: 'This agreement has already been signed.', status: 409 };
+  const signerName = String(name || '').trim();
+  if (signerName.length < 2 || signerName.length > 120) return { error: 'Please type your full name.', status: 400 };
+
+  const signed = updateBooking(bookingId, current => ({
+    ...current,
+    agreementSignedName: signerName,
+    agreementSignedAt: new Date().toISOString(),
+    agreementSignedIp: String(ip || '').slice(0, 64)
+  }));
+  return { booking: signed };
+}
+
+function markBalancePaid(bookingId, { orderId = '' } = {}) {
+  return updateBooking(bookingId, current => (
+    current.balancePaidAt ? current : { ...current, balancePaidAt: new Date().toISOString(), balanceOrderId: String(orderId || '') }
+  ));
+}
+
+// The admin's counterpart to markBalancePaid: a rental-fee balance collected
+// off-site (cash, check, money order -- per the agreement's payment clause)
+// still needs to clear the "balance due" state on the booking and receipt.
+function markBalancePaidManually(bookingId) {
+  const booking = findBooking(bookingId);
+  if (!booking) return { error: 'Booking not found.', status: 404 };
+  if (booking.balancePaidAt) return { error: 'The balance is already marked paid.', status: 409 };
+  return { booking: markBalancePaid(bookingId, { orderId: 'manual' }) };
+}
+
+function markReminderSent(bookingId) {
+  return updateBooking(bookingId, current => ({ ...current, reminderSentAt: new Date().toISOString() }));
+}
+
+function markReviewRequestSent(bookingId) {
+  return updateBooking(bookingId, current => ({ ...current, reviewRequestSentAt: new Date().toISOString() }));
+}
+
+// Confirmed, unpaid-balance bookings whose event is within `daysBefore` days
+// (and not already past) and that have not already gotten a reminder -- see
+// runScheduledBookingTasks in server.js, which calls this on a timer and
+// marks each one sent via markReminderSent so it fires exactly once.
+function listBookingsNeedingBalanceReminder(daysBefore) {
+  const now = today();
+  return readBookings().filter(booking => (
+    booking.status === BOOKING.CONFIRMED &&
+    !booking.balancePaidAt &&
+    !booking.reminderSentAt &&
+    !isPastDate(booking.date) &&
+    daysBetween(now, booking.date) <= daysBefore
+  ));
+}
+
+// Confirmed bookings whose event date has passed by at least `daysAfter` days
+// and that have not already gotten a review request.
+function listBookingsNeedingReviewRequest(daysAfter) {
+  const now = today();
+  return readBookings().filter(booking => (
+    booking.status === BOOKING.CONFIRMED &&
+    !booking.reviewRequestSentAt &&
+    daysBetween(booking.date, now) >= daysAfter
+  ));
+}
+
+// Waitlist: a customer's interest in a date that is currently blocked/taken,
+// so the admin can reach out by hand (or click "Notify" to email everyone on
+// a date's list at once) if it opens back up. Deliberately simple -- no
+// automatic re-offer flow, since a block covers a whole recurring weekday and
+// "the date opened up" can mean several different admin actions (a delete, an
+// unblock, a cancellation freeing the day).
+function joinWaitlist({ date, name, email, phone = '', notes = '' }) {
+  const day = String(date || '').trim();
+  if (!DATE_PATTERN.test(day) || Number.isNaN(Date.parse(`${day}T00:00:00`))) {
+    return { error: 'Date must be a calendar date in YYYY-MM-DD form.' };
+  }
+  if (isPastDate(day)) return { error: 'That date is in the past.' };
+  const customerName = String(name || '').trim();
+  if (customerName.length < 2) return { error: 'Please enter your name.' };
+  const customerEmail = String(email || '').trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) return { error: 'Please enter a valid email.' };
+
+  const now = new Date().toISOString();
+  return {
+    entry: appendFileRow(waitlistFile, {
+      id: randomUUID(),
+      date: day,
+      name: customerName,
+      email: customerEmail,
+      phone: String(phone || '').trim(),
+      notes: String(notes || '').trim().slice(0, 500),
+      createdAt: now,
+      notifiedAt: ''
+    })
+  };
+}
+
+function listWaitlist({ date = '' } = {}) {
+  const entries = readWaitlist().filter(entry => !isPastDate(entry.date));
+  return (date ? entries.filter(entry => entry.date === date) : entries)
+    .sort((left, right) => String(left.date).localeCompare(String(right.date)) || String(left.createdAt).localeCompare(String(right.createdAt)));
+}
+
+function removeWaitlistEntry(entryId) {
+  const entries = readWaitlist();
+  if (!entries.some(entry => entry.id === entryId)) return { error: 'Waitlist entry not found.', status: 404 };
+  writeWaitlist(entries.filter(entry => entry.id !== entryId));
+  return { ok: true };
+}
+
+// Marks every current (not-yet-notified) waitlist entry for a date as
+// notified -- called after the admin has actually sent the "this date is
+// open again" email (see /api/admin/booking/waitlist/:date/notify in
+// server.js, which sends the emails and then calls this).
+function markWaitlistNotified(date) {
+  const now = new Date().toISOString();
+  const entries = readWaitlist();
+  const notified = entries.filter(entry => entry.date === date && !entry.notifiedAt);
+  writeWaitlist(entries.map(entry => (
+    entry.date === date && !entry.notifiedAt ? { ...entry, notifiedAt: now } : entry
+  )));
+  return notified;
+}
+
 module.exports = {
   SLOT,
   BOOKING,
@@ -761,6 +961,7 @@ module.exports = {
   bookingsFile,
   blocksFile,
   unblocksFile,
+  waitlistFile,
   WEEKDAY_NAMES,
   ensureStore,
   reservationFee,
@@ -806,5 +1007,18 @@ module.exports = {
   setAgreedTime,
   cancelBooking,
   deleteSlot,
-  isRefundable
+  isRefundable,
+  generateConfirmationCode,
+  findBookingByConfirmation,
+  signAgreement,
+  markBalancePaid,
+  markBalancePaidManually,
+  markReminderSent,
+  markReviewRequestSent,
+  listBookingsNeedingBalanceReminder,
+  listBookingsNeedingReviewRequest,
+  joinWaitlist,
+  listWaitlist,
+  removeWaitlistEntry,
+  markWaitlistNotified
 };

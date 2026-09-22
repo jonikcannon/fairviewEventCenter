@@ -1,3 +1,12 @@
+<div class="pano-rooms" role="tablist" aria-label="Rooms" *ngIf="rooms.length > 1">
+  <button
+    type="button"
+    role="tab"
+    *ngFor="let room of rooms; let i = index"
+    [class.active]="i === activeRoomIndex"
+    [attr.aria-selected]="i === activeRoomIndex"
+    (click)="selectRoom(i)">{{ room.label }}</button>
+</div>
 <div
   class="pano-viewport"
   #viewport

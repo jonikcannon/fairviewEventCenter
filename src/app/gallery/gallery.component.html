@@ -22,7 +22,7 @@
       <iframe [src]="safeTourUrl" title="Community Center virtual tour" allow="fullscreen; xr-spatial-tracking" allowfullscreen loading="lazy"></iframe>
     </div>
     <ng-template #panoramaOrEmpty>
-      <app-panorama-viewer *ngIf="panoramaUrl; else emptyTour" [imageUrl]="panoramaUrl" alt="Panoramic view of the Community Center"></app-panorama-viewer>
+      <app-panorama-viewer *ngIf="panoramas.length; else emptyTour" [rooms]="panoramas"></app-panorama-viewer>
     </ng-template>
     <ng-template #emptyTour>
       <p class="gallery-empty">A virtual tour isn't available yet.</p>

@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from 
 import { CommonModule } from '@angular/common';
 import { mediaUrl } from '../media-url';
 import { SiteContent } from '../site-content';
+import { TextStyles, textStyle } from '../text-style';
 
 type RateItem = SiteContent['rates']['items'][number];
 
@@ -15,7 +16,12 @@ type RateItem = SiteContent['rates']['items'][number];
 })
 export class RatesComponent {
   @Input({ required: true }) content!: SiteContent['rates'];
+  @Input() textStyles: TextStyles | undefined;
   @Output() contactClick = new EventEmitter<void>();
+
+  style(key: string) {
+    return textStyle(this.textStyles, key);
+  }
 
   // Empty until an admin uploads a rate schedule through the Site content
   // form (see AppComponent.uploadRatesDocument).

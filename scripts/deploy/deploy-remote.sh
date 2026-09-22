@@ -92,7 +92,7 @@ ssh_run \
 
 echo
 echo "==> Verifying the API responds"
-API_CODE="$(ssh_run "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/products || true")"
+API_CODE="$(ssh_run "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3500/api/products || true")"
 if [[ "${API_CODE}" == "200" ]]; then
   echo "    API healthy (HTTP ${API_CODE})"
 else

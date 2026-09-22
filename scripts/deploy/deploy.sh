@@ -45,7 +45,7 @@ fi
 # binding, so poll the endpoint instead of trusting pm2's status.
 echo "==> Verifying the API responds"
 for attempt in $(seq 1 15); do
-  CODE="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/products || true)"
+  CODE="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3500/api/products || true)"
   if [[ "${CODE}" == "200" ]]; then
     echo "API healthy (HTTP ${CODE}) after ${attempt} attempt(s)"
     break

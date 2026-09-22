@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, Input, Output, EventEmitter } from 
 import { CommonModule } from '@angular/common';
 import { mediaUrl } from '../media-url';
 import { SiteContent } from '../site-content';
+import { TextStyles, textStyle } from '../text-style';
 
 @Component({
   selector: 'app-about',
@@ -13,9 +14,11 @@ import { SiteContent } from '../site-content';
 })
 export class AboutComponent {
   @Input({ required: true }) content!: SiteContent['about'];
+  @Input() textStyles: TextStyles | undefined;
   @Output() contactClick = new EventEmitter<void>();
   @Output() ratesClick = new EventEmitter<void>();
   @Output() bookingClick = new EventEmitter<void>();
+  @Output() featureClick = new EventEmitter<{ title: string; image: string; description?: string }>();
 
   // The bundled default until an admin uploads a real portrait through the
   // admin panel's Site content form.
@@ -44,6 +47,10 @@ export class AboutComponent {
     return this.content.features || [];
   }
 
+  style(key: string) {
+    return textStyle(this.textStyles, key);
+  }
+
   onLearnMoreClick() {
     this.contactClick.emit();
   }
@@ -54,5 +61,11 @@ export class AboutComponent {
 
   onBookingClick() {
     this.bookingClick.emit();
+  }
+
+  onFeatureClick(feature: SiteContent['about']['features'][number]) {
+    const image = this.featureImage(feature.image);
+    if (!image) return;
+    this.featureClick.emit({ title: feature.title, image, description: feature.description });
   }
 }

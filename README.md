@@ -1,5 +1,54 @@
 # Fairview Event Center
 
+Angular 18 + Express site for a community event-space venue: a public
+gallery/virtual-tour/booking site backed by an Express API, plus a
+content-managed admin panel so routine changes don't require a code edit.
+
+## Features
+
+**Public site**
+- Home, About (with priced/unpriced "features," each clickable into a
+  full-screen lightbox), Event Center gallery (photos/videos/virtual tour),
+  Rate Schedule, Booking, and a Contact panel with FAQ and a map.
+- **Booking**: a calendar of open/taken/closed days; picking a day walks
+  through package + add-on selection, a Stripe-held reservation fee, and a
+  confirmation email. A day with no slot yet can still be "requested," which
+  creates it on demand at the same flat rate. See
+  [Booking, packages & rental agreements](#booking-packages--rental-agreements).
+- **Guest booking lookup**: a customer can look their own booking up (by
+  email + the confirmation code from their booking email) without an admin
+  login, then view/sign the rental agreement, download an `.ics` calendar
+  file, or pay the remaining rental-fee balance online. See
+  [Guest booking lookup](#guest-booking-lookup).
+- **Waitlist**: picking an already-taken date offers a waitlist signup
+  instead of a dead end.
+- **Virtual tour**: an embeddable Matterport/YouTube URL, or a self-hosted
+  drag-to-pan/zoom panorama viewer with a room picker for more than one room.
+  See [Virtual tour](#virtual-tour).
+- Every major text block (hero, about, rates, FAQ, navigation labels, etc.)
+  can take its own font and size from the admin panel, and the three theme
+  colors are admin-editable CSS custom properties -- see
+  [Typography and theme](#typography-and-theme).
+- Structured data (`schema.org` `EventVenue`) is published from the loaded
+  site content for richer search-engine listings (name, description,
+  address, phone when set).
+
+**Admin panel** (password or Google sign-in, one bearer token for both)
+- **Site content**: identity, hero, statement, about copy + features, rate
+  schedule (line items and/or an uploaded PDF/Word document), contact + FAQ,
+  virtual tour, theme colors, typography, and navigation visibility -- see
+  [Admin site content](#admin-site-content).
+- **Venue gallery**: upload/reorder/delete public photos and videos, and
+  manage the virtual tour's embed URL or panorama rooms.
+- **Inquiries**: search/filter the contact form's submissions and track
+  status.
+- **Bookings**: a small revenue/bookings-by-month dashboard, manual booking
+  entry (phone/cash/walk-in), recurring weekday blocks + one-off unblock
+  exceptions, the waitlist, per-booking rental agreements (view, and mark a
+  balance paid off-site), and a sample-agreement preview for checking clause
+  wording without a real booking. See
+  [Admin bookings dashboard](#admin-bookings-dashboard).
+
 ## Setup
 
 1. Copy `.env.example` to `.env` and fill in every value. Use the same template for both local and production setup.
@@ -11,14 +60,21 @@
    [Gallery media](#gallery-media) below.
 4. Run `npm start` — starts the API and the dev server together.
 
-**The API is always required, even in R2 mode.** The shop catalogue is built from
-the gallery manifest, and the manifest is served by the API at
+**The API is always required, even in R2 mode.** The Event Center gallery is
+built from the gallery manifest, and the manifest is served by the API at
 `/assets/gallery/gallery-manifest.json` — it lives in `storage/media/`, outside
 `src/`, so the Angular build never bundles it. Run the dev server on its own and
-that fetch fails, leaving the gallery empty and the shop showing "No digital
-products are available right now." In R2 mode the *media bytes* come straight from
-the bucket, but the manifest listing them still comes from the API. Without R2 the
-API also serves the media itself at `/assets/gallery/`.
+that fetch fails, leaving the gallery empty. In R2 mode the *media bytes* come
+straight from the bucket, but the manifest listing them still comes from the
+API. Without R2 the API also serves the media itself at `/assets/gallery/`.
+
+**Note:** this workspace still carries `src/app/products/`, `src/app/cart/`,
+and `src/app/services/` (a digital-download shop and services list) from an
+earlier iteration of this scaffold. They're unwired — no route in
+`app.component.html` renders them and the admin panel has no matching tab —
+left over from when this project moved from a photography-commerce shape to
+the venue-rental shape described above. Treat them as dead code pending
+cleanup, not a live feature.
 
 `npm start` runs both concurrently with tagged `[api]` / `[web]` output, and if
 either exits it shuts down the other, so you never end up with a half-running
@@ -183,10 +239,12 @@ several GB, which is a separate operation with its own risks.
 
 The site and the API run together on a single Ubuntu server: Nginx serves the
 built Angular app from `dist/fairview-event-center` and proxies `/api/` to
-`fairviewApi/server.js` (PM2, port 3000). Because both share one origin, the browser
+`fairviewApi/server.js` (PM2, port 3500). Because both share one origin, the browser
 calls `/api` relatively and no CORS configuration is involved. See
 [scripts/deploy/README.md](scripts/deploy/README.md) for the bootstrap and deploy
-steps.
+steps, or [CLIENT_MACHINE_SETUP.md](CLIENT_MACHINE_SETUP.md) for the same setup
+as one ordered runbook if you're standing this up on a self-hosted machine
+rather than a rented VPS.
 
 Only set `API_BASE_URL` if you deliberately split the API onto a different origin
 than the site; leaving it unset is correct for the single-server setup above.
@@ -212,17 +270,110 @@ API responds before reporting success. See
 ## Admin site content
 
 The admin modal's **Site content** tab edits the public business shell without
-requiring a source edit. It currently covers the business name, description,
-contact details, hero copy, and navigation visibility. Content is persisted in
-`storage/content/site-content.json`; the API creates it on the first save and
-keeps a backup at `site-content.json.bak`.
+requiring a source edit: business identity (including an optional phone
+number), hero copy and media, the home statement, About copy and its priced/
+unpriced features, the Rate Schedule (line items grouped by an optional
+category, plus an optional uploaded PDF/Word document), Contact details and
+FAQ, theme colors, per-field typography, and navigation visibility. Content is
+persisted in `storage/content/site-content.json`; the API creates it on the
+first save and keeps a backup at `site-content.json.bak`.
 
 The public app reads content from `GET /api/content` and falls back to tracked
-neutral defaults if the API or runtime file is unavailable. Products, gallery
-metadata, bookings, inquiries, orders, and private delivery remain separate
-domains and are managed through their existing flows. Content fields are
-escaped Angular values; arbitrary HTML and private filesystem paths are not
-accepted.
+neutral defaults if the API or runtime file is unavailable. Gallery metadata,
+bookings, inquiries, and the rental agreement's own boilerplate legal text
+(`fairviewApi/rentalAgreement.js`, deliberately not content-managed) remain
+separate domains. Content fields are escaped Angular values; arbitrary HTML
+and private filesystem paths are not accepted.
+
+### Typography and theme
+
+`content.theme` holds the three theme colors (`primary`/`background`/`text`)
+as CSS custom properties, applied at runtime (`AppComponent.applyTheme`) with
+a one-click reset to the stylesheet's own defaults.
+
+`content.textStyles` holds font-family + size overrides per field *kind*
+(e.g. every FAQ question shares one override), keyed by dotted ids like
+`hero.headline` or `about.featureTitle` (`src/app/text-style.ts`). Fonts are
+a small fixed set of web-safe stacks stored as ids, not raw CSS, so a saved
+value can never inject arbitrary styling; an unset key falls through to the
+stylesheet's own size/font.
+
+## Booking, packages & rental agreements
+
+The booking model is built around the venue's real paper contract, not a
+generic percentage deposit (`fairviewApi/booking.js`,
+`fairviewApi/rentalAgreement.js`):
+
+- **Packages and add-ons are not their own data model.** A whole-day package
+  is any Rate Schedule line item with a category and a flat (non-`/hour`)
+  price; an add-on is any About-page feature with a price. Manage those two
+  editors and the booking form's options follow automatically.
+- **The reservation fee is flat and additive**, not a percentage prepayment:
+  it's the one ungrouped Rate Schedule line item, paid up front online and
+  non-refundable outside the refund window. The full package price
+  (`balanceDue`) is always due separately and is never reduced by the
+  reservation fee.
+- **Holds expire.** A slot is held (not confirmed) for `BOOKING_HOLD_MINUTES`
+  while checkout completes; a failed Stripe session releases it immediately
+  rather than holding it for the full window.
+- **Recurring weekday blocks** (e.g. "closed every Monday") plus **one-off
+  unblock exceptions** for specific dates or ranges, managed from the admin
+  Bookings tab.
+- **The rental agreement** is auto-generated per confirmed booking as
+  printable HTML from the booking's own frozen fields (so it stays
+  reproducible even if rates change later): `GET /api/admin/bookings/:id/agreement`
+  (admin) or `GET /api/bookings/:id/agreement` (the customer's own view,
+  gated by confirmation code + email). It can be **signed electronically**
+  (typed name, timestamped and IP-logged) from the customer's booking-lookup
+  page, and the **rental-fee balance can be paid online by card** from the
+  same page (`POST /api/bookings/:id/balance-checkout`) alongside the
+  agreement's other accepted methods (cash, cashier's check, money order,
+  personal check). An admin can also mark a balance paid off-site.
+- **Two scheduled emails**, sent at most once per booking by an hourly
+  in-process sweep (no cron dependency; see `runScheduledBookingTasks` in
+  `fairviewApi/server.js`): a balance-due reminder
+  (`BOOKING_BALANCE_REMINDER_DAYS` before the event) and a post-event review
+  request (`BOOKING_REVIEW_REQUEST_DAYS` after).
+- Refunds are always issued by hand in the Stripe dashboard; `refundable` is
+  advisory only.
+
+## Guest booking lookup
+
+A customer can look up their own booking with the email and confirmation
+code from their booking email (`POST /api/bookings/lookup`) -- no account
+system exists, so that pair stands in for one. From there they can view or
+sign the rental agreement, download a `.ics` file for their calendar
+(`GET /api/bookings/:id/calendar.ics`), or pay the remaining balance. Every
+one of these actions re-verifies the email + confirmation code server-side
+(`requireBookingMatch` in `fairviewApi/server.js`) rather than trusting the
+booking id alone.
+
+An admin-only `.ics` feed of every confirmed upcoming booking
+(`GET /api/admin/bookings/calendar.ics?token=...`) can be added to
+Google/Apple/Outlook as a subscription URL; it's gated by `ADMIN_CALENDAR_TOKEN`
+rather than the admin bearer token, since a calendar subscription can't send
+an `Authorization` header.
+
+## Virtual tour
+
+The Event Center tab's "Virtual Tour" view resolves in priority order:
+
+1. An **embed URL** (`content.tours.communityCenter`) -- Matterport, YouTube,
+   or similar `https://` embed, shown in an iframe.
+2. **Self-hosted panorama rooms** (`content.tours.panoramas`) -- shown only
+   when no embed URL is set, via `PanoramaViewerComponent`
+   (`src/app/panorama/`): a drag-to-pan, scroll/pinch-to-zoom viewer for a
+   wide "panorama mode" photo per room, with a room-picker strip when there's
+   more than one. It assumes roughly 90° horizontal field of view (a phone's
+   panorama-mode capture), not a true 360° sphere -- don't feed it an
+   equirectangular photo expecting correct wraparound.
+
+## Admin bookings dashboard
+
+The Bookings tab opens with a small dashboard (`GET /api/admin/bookings/stats`):
+confirmed/upcoming booking counts, revenue collected, outstanding balance,
+and a monthly bookings bar chart over the trailing 12 months -- plain CSS,
+no charting dependency.
 
 ## Runtime data
 

@@ -1,9 +1,14 @@
+import { TextStyles } from './text-style';
+
 export type SiteContent = {
   site: {
     brand: string;
     title: string;
     description: string;
     contactEmail: string;
+    // Optional -- shown in the footer and in the site's structured data
+    // (schema.org EventVenue "telephone") when set.
+    phone: string;
     footerText: string;
     socialLinks: { label: string; url: string }[];
     // Empty means "use the bundled crest" (see AppComponent.logoMark) until
@@ -75,13 +80,17 @@ export type SiteContent = {
   };
   // Controls for the "Virtual Tour" tab in the venue gallery. An embed URL
   // (Matterport/YouTube/etc.) takes priority when set; otherwise the
-  // self-hosted panorama photo is shown in an interactive pan/zoom viewer
-  // (see PanoramaViewerComponent). Both empty until an admin sets one.
-  tours: { communityCenter: string; panoramaImage: string };
+  // self-hosted panorama photos are shown in an interactive pan/zoom viewer
+  // with a room picker when there's more than one (see
+  // PanoramaViewerComponent). Both empty/[] until an admin sets one.
+  tours: { communityCenter: string; panoramas: { label: string; image: string }[] };
   // CSS custom properties applied at runtime (see AppComponent.applyTheme).
   // Defaults here match the values already baked into src/styles.css, so an
   // untouched theme renders identically to the original hardcoded palette.
   theme: { primary: string; background: string; text: string };
+  // Per-field font overrides keyed by the ids in text-style.ts; an absent
+  // key uses the stylesheet's own size and font.
+  textStyles: TextStyles;
 };
 
 export const defaultSiteContent: SiteContent = {
@@ -90,6 +99,7 @@ export const defaultSiteContent: SiteContent = {
     title: 'Fairview Community Center',
     description: 'Fairview Community Center — event spaces, bookings, and galleries for weddings, meetings, and celebrations.',
     contactEmail: 'hello@example.com',
+    phone: '',
     footerText: 'All rights reserved.',
     socialLinks: [],
     logo: ''
@@ -166,6 +176,7 @@ export const defaultSiteContent: SiteContent = {
       { name: 'Refundable Rental Deposit', detail: 'Required for all bookings', price: '$175.00', category: '' }
     ]
   },
-  tours: { communityCenter: '', panoramaImage: '' },
-  theme: { primary: '#26362e', background: '#f4f2ec', text: '#1f211d' }
+  tours: { communityCenter: '', panoramas: [] },
+  theme: { primary: '#26362e', background: '#f4f2ec', text: '#1f211d' },
+  textStyles: {}
 };

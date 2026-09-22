@@ -20,7 +20,6 @@ form input[type="color"]{width:100%;height:38px;padding:2px;border:1px solid #93
 
 .cart-quick{border:1px solid var(--color-text);background:var(--color-background);color:#050505;padding:10px 12px;margin-right:12px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:8px}
 .cart-quick span{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;border-radius:999px;background:var(--color-text);color:#fff;font-size:10px}
-.admin-quick{border:1px solid var(--color-text);background:var(--color-background);color:#050505;padding:10px 12px;margin-right:10px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:800;cursor:pointer}
 @media(max-width:700px){.cart-quick{margin-right:8px;padding:8px 10px;font-size:10px}.cart-quick span{min-width:18px;height:18px;font-size:9px}}
 
 .cart-drawer-backdrop{position:fixed;inset:0;background:rgba(10,12,10,.45);z-index:30;display:flex;justify-content:flex-end}
@@ -41,7 +40,7 @@ form input[type="color"]{width:100%;height:38px;padding:2px;border:1px solid #93
 .admin-login-card{margin:16px 0 0;width:100%}
 .admin-modal-body{grid-template-columns:1fr 1fr;gap:24px;margin-top:12px}
 @media(max-width:900px){.admin-modal-body{grid-template-columns:1fr}.admin-modal{max-height:calc(100vh - 40px)}}
-@media(max-width:700px){.admin-quick{padding:8px 10px;font-size:10px;margin-right:8px}.admin-modal-backdrop{padding:58px 10px 10px}.admin-modal{padding:20px 18px;border-radius:14px}.admin-modal-head h3{font-size:27px}}
+@media(max-width:700px){.admin-modal-backdrop{padding:58px 10px 10px}.admin-modal{padding:20px 18px;border-radius:14px}.admin-modal-head h3{font-size:27px}}
 
 .admin-tabs{display:flex;gap:3px;margin:2px 0 24px;grid-column:1 / -1;background:#ece7d9;border-radius:12px;padding:5px;flex-wrap:wrap}
 .admin-tabs button{border:0;border-radius:8px;background:none;color:#767a70;padding:11px 16px;margin-right:0;font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:8px;transition:color .15s,background-color .15s,box-shadow .15s}
@@ -130,15 +129,15 @@ form input[type="checkbox"]{display:inline-block;width:auto;border:0;padding:0;m
 .nav nav a{font-size:14px;letter-spacing:.1em;padding:12px 14px;border-radius:999px;line-height:1.1}
 .nav nav a.active{background:var(--color-text);color:var(--color-background)}
 .nav nav a:hover{background:rgba(31,33,29,.1)}
-.nav nav a:focus-visible,.admin-quick:focus-visible,.cart-quick:focus-visible,.hamburger:focus-visible,.brand:focus-visible{outline:2px solid var(--color-text);outline-offset:2px}
-.admin-quick,.cart-quick{padding:12px 14px;font-size:12px;min-height:44px}
+.nav nav a:focus-visible,.cart-quick:focus-visible,.hamburger:focus-visible,.brand:focus-visible{outline:2px solid var(--color-text);outline-offset:2px}
+.cart-quick{padding:12px 14px;font-size:12px;min-height:44px}
 
 @media(max-width:700px){
 	.nav{min-height:78px;padding:0 6vw}
 	.hamburger{font-size:24px;padding:10px;min-width:44px;min-height:44px}
 	.nav nav.open{top:74px;right:6vw;padding:16px;gap:8px;min-width:200px}
 	.nav nav.open a{font-size:13px;padding:12px 14px}
-	.admin-quick,.cart-quick{font-size:11px;padding:10px 12px;min-height:40px}
+	.cart-quick{font-size:11px;padding:10px 12px;min-height:40px}
 }
 
 
@@ -159,6 +158,17 @@ form input[type="checkbox"]{display:inline-block;width:auto;border:0;padding:0;m
 .admin-block-count{color:#8a9a90;font-size:11px;margin-left:auto}
 @media(max-width:900px){.admin-block-form{grid-template-columns:1fr 1fr}.weekday-toggles{grid-column:1/-1}}
 
+/* Bookings admin dashboard: stat tiles + a plain CSS bar chart (no charting
+   library needed for one metric over up to 12 bars). */
+.admin-stat-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+.admin-stat-tile{border:1px solid #e3ded0;background:#fbfaf6;padding:14px 16px;display:flex;flex-direction:column;gap:4px}
+.admin-stat-tile b{font-family:Georgia,serif;font-size:26px;font-weight:400;color:var(--color-primary)}
+.admin-stat-tile span{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#767a70}
+.admin-stat-chart{display:flex;align-items:flex-end;gap:6px;height:140px;border-bottom:1px solid #e3ded0;padding-top:20px}
+.admin-stat-bar{flex:1;min-height:2px;background:var(--color-primary);position:relative;display:flex;align-items:flex-start;justify-content:center;border-radius:2px 2px 0 0}
+.admin-stat-bar-value{position:absolute;top:-18px;font-size:11px;font-weight:bold;color:var(--color-primary)}
+.admin-stat-bar-label{position:absolute;bottom:-22px;font-size:9px;color:#8a8d84;white-space:nowrap;transform:rotate(-40deg);transform-origin:top left}
+
 /* Grid items are blockified but their inputs are not, so label text and input
    sit on one line and overflow into the next column -- which put the publish
    and block buttons on top of the Location and Reason fields. Stack them. */
@@ -167,3 +177,8 @@ form input[type="checkbox"]{display:inline-block;width:auto;border:0;padding:0;m
 .admin-booking-tools .underlined,.admin-block-form .underlined{white-space:nowrap;justify-self:start}
 .admin-booking-tools .admin-unblock-day{display:flex;align-items:center;gap:8px;align-self:end;text-transform:none;letter-spacing:0;font-weight:400}
 .admin-booking-tools .admin-unblock-day input{width:auto;margin:0}
+.text-style-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:-8px 0 20px}
+.text-style-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:#5f625d;min-width:150px}
+form .text-style-row select{display:inline-block;width:auto;flex:1 1 170px;margin:0;padding:6px 4px;font:13px Arial,Helvetica,sans-serif;border:1px solid #9ea198}
+form .text-style-row input{display:inline-block;width:96px;flex:none;margin:0;padding:6px 8px;font:13px Arial,Helvetica,sans-serif;border:1px solid #9ea198}
+.text-style-row .underlined{padding-bottom:2px}
