@@ -1,0 +1,27 @@
+:host{display:block}
+.lookup{margin-top:48px;padding-top:40px;border-top:1px solid #dfe1d9;max-width:520px}
+.eyebrow{font-size:10px;letter-spacing:.2em;font-weight:bold;margin:0 0 12px;color:#5a5c55}
+.lookup h3{font-family:Georgia,'Times New Roman',serif;font-weight:400;margin:0 0 8px;font-size:24px;color:var(--color-text)}
+.lookup-hint{font-size:13px;color:#5a5c55;line-height:1.5;margin:0 0 18px}
+.error{color:#8c2f2f;font-size:14px;margin:10px 0 0}
+.underlined{background:none;border:0;padding:0;text-decoration:underline;cursor:pointer;color:var(--color-primary);font:inherit}
+
+.lookup-form{display:grid;gap:14px}
+.lookup-form label{display:block;font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:#5a5c55}
+.lookup-form input{display:block;width:100%;margin-top:6px;border:1px solid #c8c9c0;background:white;padding:11px 12px;font:15px Arial,Helvetica,sans-serif;color:var(--color-text)}
+.lookup-form input:focus{outline:2px solid var(--color-primary);outline-offset:-2px}
+.lookup-form button{justify-self:start;border:0;padding:12px 18px;background:var(--color-primary);color:var(--color-background);text-transform:uppercase;font-size:11px;letter-spacing:.1em;font-weight:bold;cursor:pointer}
+.lookup-form button:disabled{opacity:.6;cursor:not-allowed}
+
+.lookup-result-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.lookup-summary{display:grid;gap:8px;margin:18px 0 0}
+.lookup-summary div{display:flex;justify-content:space-between;gap:12px;font-size:14px;border-bottom:1px solid #eceae1;padding-bottom:6px}
+.lookup-summary dt{color:#5a5c55;margin:0}
+.lookup-summary dd{margin:0;text-align:right}
+
+.lookup-actions{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin:20px 0}
+.lookup-actions button{background:none;border:0;padding:0}
+
+.lookup-sign{margin-top:24px;border-top:1px solid #eceae1;padding-top:20px}
+.lookup-sign h4{font-family:Georgia,serif;font-weight:400;font-size:17px;margin:0 0 6px;color:var(--color-text)}
+.lookup-signed{font-size:13px;color:#2f6a44;margin-top:18px}

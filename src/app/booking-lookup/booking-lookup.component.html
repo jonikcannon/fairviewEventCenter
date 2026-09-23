@@ -1,0 +1,59 @@
+<section class="lookup" *ngIf="!result">
+  <p class="eyebrow">ALREADY BOOKED?</p>
+  <h3>Look up your booking</h3>
+  <p class="lookup-hint">Enter the email you booked with and the confirmation code from your booking email.</p>
+  <form class="lookup-form" (ngSubmit)="submitLookup()">
+    <label>
+      Email
+      <input type="email" name="lookupEmail" [(ngModel)]="form.email" required autocomplete="email">
+    </label>
+    <label>
+      Confirmation code
+      <input type="text" name="lookupCode" [(ngModel)]="form.confirmationCode" required autocapitalize="characters" placeholder="e.g. 7K2P9QXM">
+    </label>
+    <button type="submit" class="underlined" [disabled]="loading">{{ loading ? 'Looking up...' : 'Find my booking' }}</button>
+  </form>
+  <p class="error" *ngIf="error">{{ error }}</p>
+</section>
+
+<section class="lookup lookup-result" *ngIf="result as booking">
+  <div class="lookup-result-head">
+    <div>
+      <p class="eyebrow">YOUR BOOKING</p>
+      <h3>{{ booking.date }}</h3>
+    </div>
+    <button type="button" class="underlined" (click)="startOver()">Look up a different booking</button>
+  </div>
+
+  <dl class="lookup-summary">
+    <div><dt>Status</dt><dd>{{ booking.status }}</dd></div>
+    <div><dt>Package</dt><dd>{{ booking.packageName }}<span *ngIf="booking.addOns.length"> + {{ booking.addOns.length }} add-on(s)</span></dd></div>
+    <div><dt>Rental fee</dt><dd>{{ money(booking.sessionFee) }}</dd></div>
+    <div><dt>Reservation fee</dt><dd>{{ money(booking.deposit) }} paid</dd></div>
+    <div><dt>Balance</dt><dd>{{ booking.balancePaid ? 'Paid in full' : money(booking.balanceDue) + ' due' }}</dd></div>
+    <div *ngIf="booking.agreedTime"><dt>Agreed arrival time</dt><dd>{{ booking.agreedTime }}</dd></div>
+  </dl>
+
+  <p class="error" *ngIf="error">{{ error }}</p>
+
+  <div class="lookup-actions" *ngIf="booking.status === 'confirmed'">
+    <a class="underlined" [href]="agreementHref" target="_blank" rel="noreferrer">View rental agreement <span>↗</span></a>
+    <a class="underlined" [href]="icsHref">Add to calendar <span>↓</span></a>
+    <button type="button" class="underlined" *ngIf="!booking.balancePaid" [disabled]="payBalanceSubmitting" (click)="payBalance.emit()">
+      {{ payBalanceSubmitting ? 'Starting checkout...' : 'Pay remaining balance (' + money(booking.balanceDue) + ')' }}
+    </button>
+  </div>
+
+  <div class="lookup-sign" *ngIf="booking.status === 'confirmed' && !booking.agreementSigned">
+    <h4>Sign your rental agreement</h4>
+    <p class="lookup-hint">Typing your name below counts as your electronic signature on the agreement linked above.</p>
+    <form class="lookup-form" (ngSubmit)="submitSignature()">
+      <label>
+        Full name
+        <input type="text" name="signerName" [(ngModel)]="signerName" required>
+      </label>
+      <button type="submit" class="underlined" [disabled]="signSubmitting">{{ signSubmitting ? 'Signing...' : 'Sign electronically' }}</button>
+    </form>
+  </div>
+  <p class="lookup-signed" *ngIf="booking.agreementSigned">Agreement signed electronically.</p>
+</section>
