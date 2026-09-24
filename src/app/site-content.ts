@@ -1,5 +1,32 @@
 import { TextStyles } from './text-style';
 
+// One room of the self-hosted virtual tour. Everything past label/image is
+// optional so rooms saved before these fields existed keep working.
+// - id: stable slug, the target of hotspots and `#tour=<id>` deep links
+// - mode: how the photo is shown. 'auto' (also the default when unset) picks
+//   from the photo's shape: ~2:1 is a full 360 sphere, wider is a phone
+//   panorama, anything narrower is a plain flat photo. 'partial' and '360'
+//   render through the Pannellum viewer with real perspective; 'flat' is a
+//   simple pan/zoom over the image (also the fallback if WebGL fails).
+// - haov/vaov/vOffset: degrees covered by a 'partial' panorama and where its
+//   centre sits relative to the horizon. Read from the photo's GPano metadata
+//   at upload; inferred from the photo's shape when absent.
+// - hotspots: x/y are percentages (0-100) of the image's width/height
+// - layouts: the same room set up differently (wedding, banquet, ...)
+export type TourRoom = {
+  id?: string;
+  label: string;
+  image: string;
+  mode?: 'auto' | 'flat' | 'partial' | '360';
+  haov?: number;
+  vaov?: number;
+  vOffset?: number;
+  description?: string;
+  capacity?: string;
+  layouts?: { label: string; image: string }[];
+  hotspots?: { x: number; y: number; toRoom: string; label?: string }[];
+};
+
 export type SiteContent = {
   site: {
     brand: string;
@@ -83,7 +110,7 @@ export type SiteContent = {
   // self-hosted panorama photos are shown in an interactive pan/zoom viewer
   // with a room picker when there's more than one (see
   // PanoramaViewerComponent). Both empty/[] until an admin sets one.
-  tours: { communityCenter: string; panoramas: { label: string; image: string }[] };
+  tours: { communityCenter: string; panoramas: TourRoom[] };
   // CSS custom properties applied at runtime (see AppComponent.applyTheme).
   // Defaults here match the values already baked into src/styles.css, so an
   // untouched theme renders identically to the original hardcoded palette.

@@ -296,11 +296,43 @@ function validateContent(input) {
   assertKeys(tours, ['communityCenter', 'panoramas'], 'tours');
   assertEmbedUrl(tours.communityCenter, 'tours.communityCenter');
   if (!Array.isArray(tours.panoramas) || tours.panoramas.length > 12) throw new Error('tours.panoramas is invalid.');
+  const roomIds = new Set();
   for (const room of tours.panoramas) {
     if (!isPlainObject(room)) throw new Error('Each panorama room must be an object.');
-    assertKeys(room, ['label', 'image'], 'tours.panoramas[]');
+    assertKeys(room, ['id', 'label', 'image', 'mode', 'haov', 'vaov', 'vOffset', 'description', 'capacity', 'layouts', 'hotspots'], 'tours.panoramas[]');
     assertString(room.label, maxLengths.label, 'panorama room label', true);
     assertMediaReference(room.image, 'panorama room image');
+    // Everything below is optional so rooms saved before these fields existed
+    // (and clients that omit them) still validate.
+    if (room.id !== undefined) {
+      if (typeof room.id !== 'string' || !/^[a-z0-9-]{1,40}$/.test(room.id)) throw new Error('panorama room id is invalid.');
+      if (roomIds.has(room.id)) throw new Error('panorama room ids must be unique.');
+      roomIds.add(room.id);
+    }
+    if (room.mode !== undefined && !['auto', 'flat', 'partial', '360'].includes(room.mode)) throw new Error('panorama room mode is invalid.');
+    if (room.haov !== undefined) assertNumberInRange(room.haov, 1, 360, 'panorama room haov');
+    if (room.vaov !== undefined) assertNumberInRange(room.vaov, 1, 180, 'panorama room vaov');
+    if (room.vOffset !== undefined) assertNumberInRange(room.vOffset, -90, 90, 'panorama room vOffset');
+    assertString(room.description || '', maxLengths.copy, 'panorama room description');
+    assertString(room.capacity || '', maxLengths.label, 'panorama room capacity');
+    const layouts = room.layouts === undefined ? [] : room.layouts;
+    if (!Array.isArray(layouts) || layouts.length > 6) throw new Error('panorama room layouts are invalid.');
+    for (const layout of layouts) {
+      if (!isPlainObject(layout)) throw new Error('Each panorama layout must be an object.');
+      assertKeys(layout, ['label', 'image'], 'tours.panoramas[].layouts[]');
+      assertString(layout.label, maxLengths.label, 'panorama layout label', true);
+      assertMediaReference(layout.image, 'panorama layout image');
+    }
+    const hotspots = room.hotspots === undefined ? [] : room.hotspots;
+    if (!Array.isArray(hotspots) || hotspots.length > 12) throw new Error('panorama room hotspots are invalid.');
+    for (const hotspot of hotspots) {
+      if (!isPlainObject(hotspot)) throw new Error('Each panorama hotspot must be an object.');
+      assertKeys(hotspot, ['x', 'y', 'toRoom', 'label'], 'tours.panoramas[].hotspots[]');
+      assertNumberInRange(hotspot.x, 0, 100, 'panorama hotspot x');
+      assertNumberInRange(hotspot.y, 0, 100, 'panorama hotspot y');
+      assertString(hotspot.toRoom, 40, 'panorama hotspot target', true);
+      assertString(hotspot.label || '', maxLengths.label, 'panorama hotspot label');
+    }
   }
 
   const theme = input.theme;

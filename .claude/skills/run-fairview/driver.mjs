@@ -190,6 +190,35 @@ const commands = {
     return commands.smoke(s);
   },
 
+  // Opens the Virtual Tour tab and reports what the panorama viewer did.
+  async tour(s) {
+    await openEventCenter(s);
+    await s.eval(`[...document.querySelectorAll('.gallery-tabs button')].find(b => /virtual tour/i.test(b.textContent))?.click()`);
+    await sleep(9000);
+    const stats = await s.eval(`
+      (() => {
+        const q = sel => document.querySelector(sel);
+        const box = el => el ? { w: el.clientWidth, h: el.clientHeight, hidden: el.hidden } : null;
+        const img = q('.pano-stage img');
+        return {
+          hasViewer: !!q('app-panorama-viewer'),
+          frame: box(q('.pano-frame')),
+          flat: box(q('.pano-viewport')),
+          sphere: box(q('.pano-sphere')),
+          sphereChildren: q('.pano-sphere')?.childElementCount,
+          pnlmError: q('.pnlm-error-msg')?.textContent || null,
+          pannellumLoaded: !!window.pannellum,
+          loadingShown: !!q('.pano-loading'),
+          errorShown: q('.pano-error')?.textContent || null,
+          flatImg: img ? { src: img.getAttribute('src'), w: img.naturalWidth, h: img.naturalHeight, stageW: q('.pano-stage').clientWidth } : null,
+          rooms: [...document.querySelectorAll('.pano-rooms button')].map(b => b.textContent.trim())
+        };
+      })()
+    `);
+    const file = await s.shot('tour');
+    return { stats, screenshot: file, consoleErrors: s.consoleErrors, failedRequests: s.failed };
+  },
+
   // The one place photo descriptions surface. Guards the descriptions.json ->
   // manifest -> openMedia -> viewer chain end to end.
   async viewer(s) {

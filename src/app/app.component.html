@@ -454,9 +454,24 @@
           <div class="about-feature-editor" *ngFor="let room of content.tours.panoramas || []; let i = index">
             <div class="about-feature-editor-head">
               <b>Room {{ i + 1 }}</b>
-              <button type="button" class="underlined" (click)="removeTourPanoramaRoom(i)">Remove room</button>
+              <span>
+                <button type="button" class="underlined" [disabled]="i === 0" (click)="moveTourPanoramaRoom(i, -1)" aria-label="Move room up">↑</button>
+                <button type="button" class="underlined" [disabled]="i === content.tours.panoramas.length - 1" (click)="moveTourPanoramaRoom(i, 1)" aria-label="Move room down">↓</button>
+                <button type="button" class="underlined" (click)="removeTourPanoramaRoom(i)">Remove room</button>
+              </span>
             </div>
             <label>Room label<input [(ngModel)]="room.label" [name]="'panoramaRoomLabel' + i" placeholder="e.g. Main hall" required></label>
+            <label>Capacity <span class="optional">shown with the room, e.g. "Seats up to 150"</span><input [(ngModel)]="room.capacity" [name]="'panoramaRoomCapacity' + i" maxlength="60"></label>
+            <label>Description <span class="optional">layout notes, features, what it's best for</span><textarea [(ngModel)]="room.description" [name]="'panoramaRoomDescription' + i" rows="3" maxlength="600"></textarea></label>
+            <label>Photo type
+              <select [(ngModel)]="room.mode" [name]="'panoramaRoomMode' + i">
+                <option [ngValue]="'auto'">Automatic – detect from the photo (recommended)</option>
+                <option [ngValue]="'partial'">Phone panorama (partial view, real perspective)</option>
+                <option [ngValue]="'360'">Full 360° photo (2:1)</option>
+                <option [ngValue]="'flat'">Flat photo (simple pan and zoom)</option>
+              </select>
+              <span class="optional" *ngIf="room.haov">Detected from the photo: {{ room.haov }}° wide × {{ room.vaov }}° tall</span>
+            </label>
             <div class="media-field">
               <label>Panorama photo
                 <input type="file" accept="image/*" (change)="uploadTourPanoramaRoom($event, i)" [disabled]="!!contentMediaUploading['tourPanorama-' + i]">
@@ -467,6 +482,35 @@
               </div>
               <p class="admin-inquiries-meta" *ngIf="contentMediaUploading['tourPanorama-' + i]">Uploading…</p>
               <button type="button" class="underlined" *ngIf="room.image" (click)="room.image = ''">Remove image</button>
+            </div>
+
+            <div class="tour-hotspots" *ngIf="room.image && content.tours.panoramas.length > 1">
+              <span class="tour-preview-label">Hotspots <span class="optional">click the photo to add a "go to another room" marker</span></span>
+              <div class="tour-hotspot-canvas" (click)="addTourHotspot($event, room)">
+                <img [src]="mediaUrl(room.image)" alt="" draggable="false">
+                <span class="tour-hotspot-dot" *ngFor="let spot of room.hotspots || []; let h = index" [style.left.%]="spot.x" [style.top.%]="spot.y">{{ h + 1 }}</span>
+              </div>
+              <div class="tour-hotspot-row" *ngFor="let spot of room.hotspots || []; let h = index">
+                <b>{{ h + 1 }}</b>
+                <select [(ngModel)]="spot.toRoom" [name]="'hotspotTarget' + i + '-' + h" aria-label="Goes to room">
+                  <ng-container *ngFor="let target of content.tours.panoramas">
+                    <option *ngIf="target.id && target.id !== room.id" [ngValue]="target.id">{{ target.label || 'Untitled room' }}</option>
+                  </ng-container>
+                </select>
+                <input [(ngModel)]="spot.label" [name]="'hotspotLabel' + i + '-' + h" placeholder="Label (optional)" maxlength="60">
+                <button type="button" class="underlined" (click)="removeTourHotspot(room, h)">Remove</button>
+              </div>
+            </div>
+
+            <div class="tour-layouts">
+              <span class="tour-preview-label">Layout views <span class="optional">the same room set up for a wedding, banquet, conference…</span></span>
+              <div class="tour-hotspot-row" *ngFor="let layout of room.layouts || []; let l = index">
+                <input [(ngModel)]="layout.label" [name]="'layoutLabel' + i + '-' + l" placeholder="e.g. Banquet" maxlength="60">
+                <input type="file" accept="image/*" (change)="uploadTourLayout($event, i, l)" [disabled]="!!contentMediaUploading['tourLayout-' + i + '-' + l]">
+                <img *ngIf="layout.image" class="tour-layout-thumb" [src]="mediaUrl(layout.image)" alt="">
+                <button type="button" class="underlined" (click)="removeTourLayout(room, l)">Remove</button>
+              </div>
+              <button type="button" class="underlined" *ngIf="(room.layouts || []).length < 6" (click)="addTourLayout(room)">Add layout view +</button>
             </div>
           </div>
           <button type="button" class="underlined" (click)="addTourPanoramaRoom()">Add room +</button>

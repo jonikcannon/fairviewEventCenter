@@ -11,7 +11,8 @@ import { BookingComponent, BookingDateRequest, BookingRequest, BookingSlot } fro
 import { BookingLookupComponent, BookingLookupResult } from './booking-lookup/booking-lookup.component';
 import { CartComponent, CartItem } from './cart/cart.component';
 import { getApiBaseUrl, mediaUrl } from './media-url';
-import { defaultSiteContent, SiteContent } from './site-content';
+import { defaultSiteContent, SiteContent, TourRoom } from './site-content';
+import { readPanoGeometry } from './panorama/gpano';
 import { FONT_ONLY_KEYS, TEXT_FONTS, TEXT_SIZE_MAX, TEXT_SIZE_MIN, TextStyle, TextStyles, textStyle } from './text-style';
 
 type Work = { id?: string; image: string; title: string; type: string; size?: string; price?: number; mediaType?: 'image' | 'video' };
@@ -452,6 +453,12 @@ export class AppComponent implements OnInit {
     void this.loadProducts();
     this.initGoogleSignIn();
     void this.handleBookingCheckoutReturn();
+    // `#tour` or `#tour=<room id>` opens the venue's virtual tour directly
+    // (the viewer itself picks the room out of the hash).
+    if (/^#tour(=|$)/.test(window.location.hash)) {
+      this.goToSection('eventCenter');
+      this.changeGalleryMediaKind('tour');
+    }
   }
 
   // Stripe sends the visitor back to success_url/cancel_url on
@@ -501,6 +508,7 @@ export class AppComponent implements OnInit {
       if (!response.ok) return;
       const incoming = await response.json();
       this.content = { ...defaultSiteContent, ...incoming };
+      this.ensureTourRoomIds();
       this.applyTheme();
       this.updateStructuredData();
       this.changeDetector.detectChanges();
@@ -652,8 +660,13 @@ export class AppComponent implements OnInit {
   get activeTourUrl(): string {
     return this.content.tours.communityCenter;
   }
-  get activeTourPanoramas(): { label: string; image: string }[] {
-    return (this.content.tours.panoramas || []).map(room => ({ label: room.label, image: mediaUrl(room.image) }));
+  get activeTourPanoramas(): TourRoom[] {
+    return (this.content.tours.panoramas || []).map((room, i) => ({
+      ...room,
+      id: room.id || `room-${i + 1}`,
+      image: mediaUrl(room.image),
+      layouts: (room.layouts || []).map(layout => ({ label: layout.label, image: mediaUrl(layout.image) }))
+    }));
   }
   private slugify(value: string): string {
     return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'item';
@@ -1112,14 +1125,83 @@ export class AppComponent implements OnInit {
   uploadRatesDocument(event: Event) {
     this.pickAndUploadContentMedia(event, 'ratesDocument', 10 * 1024 * 1024, value => (this.content.rates.document = value));
   }
+  // Hotspots and `#tour=<id>` deep links point at a room's id, not its
+  // position, so reordering or removing rooms never re-targets them. Rooms
+  // saved before ids existed get one here, the first time they're edited/saved.
+  private ensureTourRoomIds() {
+    const rooms = this.content.tours.panoramas || [];
+    const used = new Set(rooms.map(r => r.id).filter(Boolean));
+    rooms.forEach((room, index) => {
+      room.mode ??= 'auto';
+      if (room.id) return;
+      // Deterministic first choice, so a legacy room's id (and any link to
+      // it) is the same on every load until it's saved with a real one.
+      let id = `room-${index + 1}`;
+      while (used.has(id)) id = `room-${Math.random().toString(36).slice(2, 8)}`;
+      used.add(id);
+      room.id = id;
+    });
+  }
   addTourPanoramaRoom() {
-    this.content.tours.panoramas = [...(this.content.tours.panoramas || []), { label: '', image: '' }];
+    this.content.tours.panoramas = [...(this.content.tours.panoramas || []), { label: '', image: '', mode: 'auto', description: '', capacity: '', layouts: [], hotspots: [] }];
+    this.ensureTourRoomIds();
   }
   removeTourPanoramaRoom(index: number) {
-    this.content.tours.panoramas = (this.content.tours.panoramas || []).filter((_, i) => i !== index);
+    this.ensureTourRoomIds();
+    const removed = this.content.tours.panoramas[index]?.id;
+    this.content.tours.panoramas = (this.content.tours.panoramas || [])
+      .filter((_, i) => i !== index)
+      .map(room => ({ ...room, hotspots: (room.hotspots || []).filter(h => h.toRoom !== removed) }));
+  }
+  moveTourPanoramaRoom(index: number, delta: -1 | 1) {
+    const rooms = [...(this.content.tours.panoramas || [])];
+    const target = index + delta;
+    if (target < 0 || target >= rooms.length) return;
+    [rooms[index], rooms[target]] = [rooms[target], rooms[index]];
+    this.content.tours.panoramas = rooms;
   }
   uploadTourPanoramaRoom(event: Event, index: number) {
-    this.pickAndUploadContentMedia(event, 'tourPanorama', 20 * 1024 * 1024, value => (this.content.tours.panoramas[index].image = value), `tourPanorama-${index}`);
+    // Grab the file before the upload helper clears the input, and read its
+    // GPano metadata so a phone panorama is shown at its true field of view.
+    const file = (event.target as HTMLInputElement).files?.[0];
+    const geometry = file ? readPanoGeometry(file) : Promise.resolve(null);
+    this.pickAndUploadContentMedia(event, 'tourPanorama', 20 * 1024 * 1024, async value => {
+      const room = this.content.tours.panoramas[index];
+      const found = await geometry;
+      room.image = value;
+      room.mode = found?.mode ?? 'auto';
+      room.haov = found?.haov;
+      room.vaov = found?.vaov;
+      room.vOffset = found?.vOffset;
+      this.changeDetector.markForCheck();
+    }, `tourPanorama-${index}`);
+  }
+  addTourLayout(room: TourRoom) {
+    room.layouts = [...(room.layouts || []), { label: '', image: '' }];
+  }
+  removeTourLayout(room: TourRoom, index: number) {
+    room.layouts = (room.layouts || []).filter((_, i) => i !== index);
+  }
+  uploadTourLayout(event: Event, roomIndex: number, layoutIndex: number) {
+    this.pickAndUploadContentMedia(event, 'tourPanorama', 20 * 1024 * 1024, value => (this.content.tours.panoramas[roomIndex].layouts![layoutIndex].image = value), `tourLayout-${roomIndex}-${layoutIndex}`);
+  }
+  // Click on the room's image in the editor to drop a hotspot there; x/y are
+  // stored as percentages so they hold at any display size.
+  addTourHotspot(event: MouseEvent, room: TourRoom) {
+    this.ensureTourRoomIds();
+    const target = (this.content.tours.panoramas || []).find(r => r.id !== room.id);
+    if (!target) return;
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const round = (n: number) => Math.round(Math.min(100, Math.max(0, n)) * 10) / 10;
+    room.hotspots = [...(room.hotspots || []), {
+      x: round(((event.clientX - rect.left) / rect.width) * 100),
+      y: round(((event.clientY - rect.top) / rect.height) * 100),
+      toRoom: target.id!,
+      label: ''
+    }];
+  }
+  removeTourHotspot(room: TourRoom, index: number) {
+    room.hotspots = (room.hotspots || []).filter((_, i) => i !== index);
   }
 
   addFaqItem() {
@@ -1880,15 +1962,28 @@ export class AppComponent implements OnInit {
     if (!this.adminToken || this.venueGalleryTourSaving) return;
     this.venueGalleryTourSaving = true;
     this.venueGalleryError = '';
+    this.ensureTourRoomIds();
+    // Drop half-filled layouts and hotspots pointing at rooms that no longer
+    // exist rather than have the server reject the whole save.
+    const roomIds = new Set(this.content.tours.panoramas.map(r => r.id));
+    const tours = {
+      ...this.content.tours,
+      panoramas: this.content.tours.panoramas.map(room => ({
+        ...room,
+        layouts: (room.layouts || []).filter(l => l.label.trim() && l.image),
+        hotspots: (room.hotspots || []).filter(h => roomIds.has(h.toRoom) && h.toRoom !== room.id)
+      }))
+    };
     try {
       const response = await fetch(`${this.api}/admin/content`, {
         method: 'PATCH',
         headers: { ...this.adminHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tours: this.content.tours })
+        body: JSON.stringify({ tours })
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body?.error || 'Could not save the tour link.');
       this.content = body.content;
+      this.ensureTourRoomIds();
     } catch (error) {
       this.venueGalleryError = error instanceof Error ? error.message : 'Could not save the tour link.';
     }

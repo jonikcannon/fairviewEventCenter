@@ -23,6 +23,11 @@
                 "input": "src/assets",
                 "output": "assets",
                 "ignore": ["gallery/**"]
+              },
+              {
+                "glob": "pannellum.{js,css}",
+                "input": "node_modules/pannellum/build",
+                "output": "assets/pannellum"
               }
             ],
             "styles": ["src/styles.css"]

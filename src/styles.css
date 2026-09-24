@@ -4,3 +4,10 @@
    content.theme after /api/content loads. */
 :root{--color-primary:#26362e;--color-background:#f4f2ec;--color-text:#1f211d}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0}button,a{font:inherit}a{text-decoration:none}
+
+/* Hotspots inside the Pannellum 360 viewer (created outside Angular's view
+   encapsulation, so styled globally). */
+.pano360-hotspot{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.92);border:0;cursor:pointer;box-shadow:0 0 0 0 rgba(255,255,255,.6);animation:pano360-pulse 2s infinite}
+.pano360-hotspot::before{content:"\27A4";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#26362e;font-size:16px}
+.pano360-hotspot span{white-space:nowrap}
+@keyframes pano360-pulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,.55)}70%{box-shadow:0 0 0 14px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}

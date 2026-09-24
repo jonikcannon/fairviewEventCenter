@@ -1,14 +1,48 @@
 :host{display:block}
+[hidden]{display:none!important}
 .pano-rooms{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .pano-rooms button{border:1px solid #d3d4cb;background:#faf9f7;color:#3d4a42;padding:8px 14px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:bold;cursor:pointer;border-radius:999px}
 .pano-rooms button.active{background:var(--color-primary,#26362e);border-color:var(--color-primary,#26362e);color:#fff}
-.pano-viewport{position:relative;width:100%;aspect-ratio:16/9;overflow:hidden;background:#000;border-radius:4px;cursor:grab;touch-action:none}
+.pano-frame{position:relative;width:100%;aspect-ratio:var(--pano-aspect,16/9);overflow:hidden;background:#000;border-radius:4px}
+.pano-viewport,.pano-sphere{position:absolute;inset:0;overflow:hidden}
+.pano-viewport{cursor:grab;touch-action:none;outline-offset:-3px}
+.pano-viewport:focus-visible{outline:3px solid #fff}
 .pano-viewport.dragging{cursor:grabbing}
-.pano-viewport img{position:absolute;top:50%;left:50%;max-width:none;user-select:none;-webkit-user-drag:none}
+.pano-stage{position:absolute;top:50%;left:50%}
+.pano-stage img{display:block;width:100%;height:100%;max-width:none;user-select:none;-webkit-user-drag:none}
 .pano-hint{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);margin:0;background:rgba(0,0,0,.55);color:#fff;font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:9px 18px;border-radius:999px;pointer-events:none;white-space:nowrap}
 .pano-zoom{position:absolute;right:14px;bottom:14px;display:flex;flex-direction:column;gap:6px}
 .pano-zoom button{width:34px;height:34px;border:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:18px;line-height:1;cursor:pointer}
 .pano-zoom button:hover{background:rgba(0,0,0,.75)}
+.pano-loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(0,0,0,.72);color:#fff;font-size:11px;letter-spacing:.1em;text-transform:uppercase;pointer-events:none}
+.pano-spinner{width:32px;height:32px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:pano-spin .8s linear infinite}
+@keyframes pano-spin{to{transform:rotate(360deg)}}
+.pano-error{position:absolute;inset:0;margin:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;background:#111;color:#fff;font-size:13px}
+
+/* "Go to another room" hotspots (flat viewer). Sized in px, not scaled with
+   the photo, so they stay tappable at every zoom level. */
+.pano-hotspot{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;gap:8px;border:0;background:none;padding:0;cursor:pointer;color:#fff}
+.pano-hotspot-dot{display:flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.92);color:#26362e;font-size:16px;box-shadow:0 0 0 0 rgba(255,255,255,.6);animation:pano-pulse 2s infinite}
+.pano-hotspot-label{background:rgba(0,0,0,.65);padding:6px 11px;border-radius:999px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;opacity:0;transform:translateX(-4px);transition:opacity .15s,transform .15s;pointer-events:none}
+.pano-hotspot:hover .pano-hotspot-label,.pano-hotspot:focus-visible .pano-hotspot-label{opacity:1;transform:none}
+.pano-hotspot:focus-visible .pano-hotspot-dot{outline:3px solid #fff;outline-offset:2px}
+@keyframes pano-pulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,.55)}70%{box-shadow:0 0 0 14px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}
+@media(hover:none){.pano-hotspot-label{opacity:1;transform:none}}
+
+.pano-details{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;flex-wrap:wrap;margin-top:16px}
+.pano-details-main{flex:1 1 320px;min-width:0}
+.pano-details h3{margin:0 0 4px;font-size:22px}
+.pano-capacity{margin:0 0 8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:bold;color:#8a8d84}
+.pano-description{margin:0 0 12px;line-height:1.6;max-width:62ch;white-space:pre-line}
+.pano-layouts{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.pano-layouts span{font-size:10px;letter-spacing:.13em;text-transform:uppercase;font-weight:bold;color:#8a8d84;margin-right:4px}
+.pano-layouts button{border:1px solid #d3d4cb;background:#faf9f7;color:#3d4a42;padding:6px 12px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;border-radius:999px}
+.pano-layouts button.active{background:var(--color-primary,#26362e);border-color:var(--color-primary,#26362e);color:#fff}
+.pano-actions{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.pano-cta{border:0;background:var(--color-primary,#26362e);color:#fff;padding:12px 22px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:bold;cursor:pointer;border-radius:999px}
+.pano-cta:hover{opacity:.9}
+.pano-link{border:0;background:none;padding:0;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#3d4a42;text-decoration:underline;cursor:pointer}
 @media(max-width:700px){
-  .pano-viewport{aspect-ratio:4/3}
+  .pano-frame{aspect-ratio:4/3}
+  .pano-details{flex-direction:column}
 }

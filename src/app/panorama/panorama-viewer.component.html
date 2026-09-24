@@ -1,34 +1,84 @@
-<div class="pano-rooms" role="tablist" aria-label="Rooms" *ngIf="rooms.length > 1">
+<div class="pano-rooms" role="tablist" aria-label="Rooms" *ngIf="showRoomPicker">
   <button
     type="button"
     role="tab"
-    *ngFor="let room of rooms; let i = index"
+    *ngFor="let room of rooms; let i = index; trackBy: trackByIndex"
     [class.active]="i === activeRoomIndex"
     [attr.aria-selected]="i === activeRoomIndex"
     (click)="selectRoom(i)">{{ room.label }}</button>
 </div>
-<div
-  class="pano-viewport"
-  #viewport
-  [class.dragging]="dragging"
-  (pointerdown)="onPointerDown($event)"
-  (pointermove)="onPointerMove($event)"
-  (pointerup)="onPointerUp($event)"
-  (pointercancel)="onPointerUp($event)"
-  (wheel)="onWheel($event)"
-  (dblclick)="resetView()">
-  <img
-    #image
-    [src]="imageUrl"
-    [alt]="alt"
-    draggable="false"
-    (load)="onImageLoad()"
-    [style.width.px]="displayWidth"
-    [style.height.px]="displayHeight"
-    [style.transform]="imageTransform">
-  <p class="pano-hint" *ngIf="!hasInteracted">Drag to look around</p>
-  <div class="pano-zoom">
-    <button type="button" (click)="zoomOut()" aria-label="Zoom out">−</button>
-    <button type="button" (click)="zoomIn()" aria-label="Zoom in">+</button>
+
+<div class="pano-frame" [style.--pano-aspect]="frameAspect">
+  <!-- Flat (phone panorama) viewer: drag / pinch / wheel / keyboard. -->
+  <div
+    class="pano-viewport"
+    #viewport
+    [hidden]="sphereMode"
+    [class.dragging]="dragging"
+    tabindex="0"
+    role="application"
+    [attr.aria-label]="alt + '. Use arrow keys to look around, plus and minus to zoom.'"
+    (pointerdown)="onPointerDown($event)"
+    (pointermove)="onPointerMove($event)"
+    (pointerup)="onPointerUp($event)"
+    (pointercancel)="onPointerUp($event)"
+    (wheel)="onWheel($event)"
+    (keydown)="onKeydown($event)"
+    (dblclick)="resetView()">
+    <div class="pano-stage" [style.width.px]="displayWidth" [style.height.px]="displayHeight" [style.transform]="imageTransform">
+      <img
+        #image
+        [attr.src]="flatUrl || null"
+        [alt]="alt"
+        draggable="false"
+        (load)="onImageLoad()"
+        (error)="onImageError()">
+      <button
+        type="button"
+        class="pano-hotspot"
+        *ngFor="let spot of room?.hotspots || []; trackBy: trackByIndex"
+        [style.left.%]="spot.x"
+        [style.top.%]="spot.y"
+        [attr.aria-label]="'Go to ' + (spot.label || roomLabel(spot.toRoom))"
+        (click)="selectRoomById(spot.toRoom)">
+        <span class="pano-hotspot-dot" aria-hidden="true">➜</span>
+        <span class="pano-hotspot-label">{{ spot.label || roomLabel(spot.toRoom) }}</span>
+      </button>
+    </div>
+    <div class="pano-zoom">
+      <button type="button" (click)="zoomOut()" aria-label="Zoom out">−</button>
+      <button type="button" (click)="zoomIn()" aria-label="Zoom in">+</button>
+    </div>
+  </div>
+
+  <!-- Full 360 viewer (Pannellum mounts itself in here). -->
+  <div class="pano-sphere" #sphere [hidden]="!sphereMode"></div>
+
+  <div class="pano-loading" *ngIf="loading && !loadError" aria-live="polite">
+    <div class="pano-spinner"></div>
+    <span>Loading {{ room?.label || 'view' }}…</span>
+  </div>
+  <p class="pano-error" *ngIf="loadError" role="alert">This view couldn't be loaded. Try another room or refresh the page.</p>
+  <p class="pano-hint" *ngIf="!hasInteracted && !loading && !loadError">{{ sphereMode ? 'Drag to look around' : 'Drag to look around · pinch to zoom' }}</p>
+</div>
+
+<div class="pano-details" *ngIf="room">
+  <div class="pano-details-main">
+    <h3>{{ room.label }}</h3>
+    <p class="pano-capacity" *ngIf="room.capacity">{{ room.capacity }}</p>
+    <p class="pano-description" *ngIf="room.description">{{ room.description }}</p>
+    <div class="pano-layouts" *ngIf="room.layouts?.length" role="group" aria-label="Room layouts">
+      <span>Layout</span>
+      <button type="button" [class.active]="activeLayoutIndex === -1" (click)="selectLayout(-1)">Default</button>
+      <button
+        type="button"
+        *ngFor="let layout of room.layouts; let l = index; trackBy: trackByIndex"
+        [class.active]="activeLayoutIndex === l"
+        (click)="selectLayout(l)">{{ layout.label }}</button>
+    </div>
+  </div>
+  <div class="pano-actions">
+    <button type="button" class="pano-cta" (click)="onBookNow()">Check availability <span>↗</span></button>
+    <button type="button" class="pano-link" (click)="copyLink()" *ngIf="room.id">{{ linkCopied ? 'Link copied' : 'Copy link to this room' }}</button>
   </div>
 </div>

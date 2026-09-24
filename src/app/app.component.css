@@ -182,3 +182,10 @@ form input[type="checkbox"]{display:inline-block;width:auto;border:0;padding:0;m
 form .text-style-row select{display:inline-block;width:auto;flex:1 1 170px;margin:0;padding:6px 4px;font:13px Arial,Helvetica,sans-serif;border:1px solid #9ea198}
 form .text-style-row input{display:inline-block;width:96px;flex:none;margin:0;padding:6px 8px;font:13px Arial,Helvetica,sans-serif;border:1px solid #9ea198}
 .text-style-row .underlined{padding-bottom:2px}
+.tour-hotspots,.tour-layouts{margin:16px 0 4px}
+.tour-hotspot-canvas{position:relative;display:block;max-width:560px;cursor:crosshair;border:1px solid #e3ded0;border-radius:8px;overflow:hidden;margin:8px 0 10px}
+.tour-hotspot-canvas img{display:block;width:100%;height:auto;user-select:none}
+.tour-hotspot-dot{position:absolute;transform:translate(-50%,-50%);width:24px;height:24px;border-radius:50%;background:#26362e;color:#fff;font-size:12px;font-weight:bold;display:flex;align-items:center;justify-content:center;border:2px solid #fff;pointer-events:none}
+.tour-hotspot-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0}
+.tour-hotspot-row input[type=text],.tour-hotspot-row input:not([type]){flex:1 1 160px;min-width:0}
+.tour-layout-thumb{width:56px;height:36px;object-fit:cover;border-radius:4px}

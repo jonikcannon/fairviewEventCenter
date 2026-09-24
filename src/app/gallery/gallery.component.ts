@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, Input, Output, EventEmitter } from 
 import { CommonModule } from '@angular/common';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { PanoramaViewerComponent } from '../panorama/panorama-viewer.component';
+import { TourRoom } from '../site-content';
 
 // Mirrors the manifest shape in app.component.ts: `description` is optional
 // because only described media carries one, and the title is the fallback.
@@ -22,7 +23,7 @@ export class GalleryComponent {
   @Input() tourUrl = '';
   // Self-hosted fallback shown when tourUrl (an embed) isn't set -- see
   // PanoramaViewerComponent. May hold more than one room.
-  @Input() panoramas: { label: string; image: string }[] = [];
+  @Input() panoramas: TourRoom[] = [];
   @Input() galleryLoading = true;
   @Input() galleryPrefetching = false;
   @Input() galleryPrefetchCount = 0;
