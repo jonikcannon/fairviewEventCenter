@@ -104,9 +104,11 @@ form input[type="checkbox"]{display:inline-block;width:auto;border:0;padding:0;m
 .gallery-published-thumb{position:relative;height:110px;background:#000}
 .gallery-published-thumb img,.gallery-published-thumb video{width:100%;height:100%;object-fit:cover;display:block}
 .gallery-published-badge{position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.65);color:#fff;padding:2px 8px;border-radius:999px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;font-weight:700}
-.gallery-published-info{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 11px}
-.gallery-published-info span{font-size:12px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.gallery-published-info .underlined{flex:none;margin:0}
+.gallery-published-info{display:flex;flex-direction:column;gap:7px;padding:9px 11px}
+.gallery-published-title{width:100%;box-sizing:border-box;border:0;border-bottom:1px solid #d8d4c7;background:transparent;padding:3px 0;margin:0;font:12px Arial,Helvetica,sans-serif;color:var(--color-primary)}
+.gallery-published-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.gallery-published-actions .underlined{flex:none;margin:0}
+.gallery-published-actions .underlined:disabled{opacity:.4;cursor:not-allowed}
 @media(max-width:700px){.gallery-published-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}.gallery-published-thumb{height:90px}}
 @media(max-width:900px){.admin-products{grid-template-columns:1fr}.admin-inquiries-tools{grid-template-columns:1fr 1fr}.admin-inquiries-tools .underlined{margin-top:6px}}
 @media(max-width:700px){.admin-tabs{flex-wrap:wrap}.admin-inquiries-tools{grid-template-columns:1fr}.inquiry-card-foot{flex-direction:column;align-items:flex-start}}

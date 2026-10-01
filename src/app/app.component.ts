@@ -1958,6 +1958,39 @@ export class AppComponent implements OnInit {
       await this.showNotice('Network error while deleting this file.', 'Delete failed');
     }
   }
+  venueGalleryTitleEdits: Record<string, string> = {};
+  venueGalleryRenaming: Record<string, boolean> = {};
+
+  onVenueGalleryTitleInput(item: GalleryItem, value: string) {
+    if (value === item.title) delete this.venueGalleryTitleEdits[item.image];
+    else this.venueGalleryTitleEdits[item.image] = value;
+  }
+
+  async renameVenueGalleryMedia(item: GalleryItem) {
+    const title = (this.venueGalleryTitleEdits[item.image] || '').trim();
+    if (!this.adminToken || !title || title === item.title) return;
+    const fileName = decodeURIComponent(item.image.split('/').pop() || '');
+    if (!fileName) return;
+    this.venueGalleryRenaming[item.image] = true;
+    try {
+      const response = await fetch(`${this.api}/admin/venue-gallery/community-center/${encodeURIComponent(fileName)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.adminToken}` },
+        body: JSON.stringify({ title })
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        this.venueGalleryError = body.error || 'Could not rename this item.';
+        return;
+      }
+      item.title = title;
+      delete this.venueGalleryTitleEdits[item.image];
+      this.venueGalleryError = '';
+    } catch {
+      this.venueGalleryError = 'Network error while renaming.';
+    }
+    this.venueGalleryRenaming[item.image] = false;
+  }
   async saveVenueGalleryTour() {
     if (!this.adminToken || this.venueGalleryTourSaving) return;
     this.venueGalleryTourSaving = true;

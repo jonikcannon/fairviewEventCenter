@@ -38,7 +38,8 @@ if (!fs.existsSync(productsDir)) fs.mkdirSync(productsDir, { recursive: true });
 const { resolveMediaDir, CATEGORIES } = require('../scripts/media-dir');
 const {
   config: r2Config, isR2Configured, isCdnEnabled, createR2Client,
-  toObjectKey: toR2Key, toPublicUrl: toR2Url, putObject: putR2Object, contentTypeFor
+  toObjectKey: toR2Key, toPublicUrl: toR2Url, putObject: putR2Object, contentTypeFor,
+  DESCRIPTIONS_KEY, DESCRIPTIONS_FILE, getObjectText: getR2ObjectText
 } = require('../scripts/r2');
 const galleryDir = resolveMediaDir();
 if (!fs.existsSync(galleryDir)) fs.mkdirSync(galleryDir, { recursive: true });
@@ -1327,6 +1328,67 @@ app.post('/api/admin/venue-gallery', auth, async (req, res) => {
   } catch (error) {
     console.error('Venue gallery upload failed:', error);
     return res.status(500).json({ error: 'Upload failed.' });
+  }
+});
+
+// The bucket is the source of truth for titles once CDN-served: a server
+// restart or the next deploy's `npm run manifest` reads descriptions.json
+// from there, not local disk (see generate-gallery-manifest.js), so a title
+// edit has to land there too or it would be silently lost on the next deploy.
+// Local disk is still written as well, so the local-disk fallback (no R2
+// configured) picks it up and a read-after-write within this process agrees
+// either way.
+async function readGalleryDescriptions() {
+  if (r2Client && isR2Configured()) {
+    const body = await getR2ObjectText(r2Client, DESCRIPTIONS_KEY);
+    return body ? JSON.parse(body) : {};
+  }
+  const file = path.join(galleryDir, DESCRIPTIONS_FILE);
+  if (!fs.existsSync(file)) return {};
+  return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+
+async function writeGalleryDescriptions(descriptions) {
+  const sorted = Object.fromEntries(Object.keys(descriptions).sort().map(key => [key, descriptions[key]]));
+  const body = `${JSON.stringify(sorted, null, 2)}\n`;
+  if (r2Client && isR2Configured()) {
+    await putR2Object(r2Client, DESCRIPTIONS_KEY, Buffer.from(body, 'utf8'), 'application/json');
+  }
+  fs.mkdirSync(galleryDir, { recursive: true });
+  fs.writeFileSync(path.join(galleryDir, DESCRIPTIONS_FILE), body, 'utf8');
+}
+
+app.patch('/api/admin/venue-gallery/:category/:fileName', auth, async (req, res) => {
+  const category = String(req.params.category || '').trim().toLowerCase();
+  const label = VENUE_GALLERY_FOLDERS[category];
+  if (!label) return res.status(400).json({ error: 'Category must be community-center.' });
+
+  const fileName = String(req.params.fileName || '').trim();
+  const safeName = path.basename(decodeURIComponent(fileName));
+  if (!safeName || safeName !== decodeURIComponent(fileName)) {
+    return res.status(400).json({ error: 'File name is invalid.' });
+  }
+
+  const title = String(req.body?.title || '').trim();
+  if (!title || title.length > 120) {
+    return res.status(400).json({ error: 'Title must be 1-120 characters.' });
+  }
+
+  try {
+    const descriptions = await readGalleryDescriptions();
+    const key = `${category}/${safeName}`;
+    descriptions[key] = { ...descriptions[key], title };
+    await writeGalleryDescriptions(descriptions);
+
+    const relativeImage = `assets/gallery/${category}/${encodeURIComponent(safeName)}`;
+    const publicImage = toGalleryPublicImage(relativeImage);
+    const manifest = readGalleryManifest().map(item => item.image === publicImage ? { ...item, title } : item);
+    writeGalleryManifest(manifest);
+
+    return res.json({ ok: true, title });
+  } catch (error) {
+    console.error('Venue gallery rename failed:', error);
+    return res.status(500).json({ error: 'Could not rename this item.' });
   }
 });
 

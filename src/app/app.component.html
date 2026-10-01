@@ -425,15 +425,18 @@
         <div class="gallery-published" *ngIf="venueGalleryCategoryMedia.length">
           <h4>Published photos and videos</h4>
           <div class="gallery-published-grid">
-            <div class="gallery-published-item" *ngFor="let item of venueGalleryCategoryMedia; trackBy: trackByGalleryItem">
+            <div class="gallery-published-item" *ngFor="let item of venueGalleryCategoryMedia; let i = index; trackBy: trackByGalleryItem">
               <div class="gallery-published-thumb">
                 <img *ngIf="item.mediaType === 'image'" [src]="item.image" [alt]="item.title">
                 <video *ngIf="item.mediaType === 'video'" [src]="item.image" muted preload="metadata"></video>
                 <b *ngIf="item.mediaType === 'video'" class="gallery-published-badge">Video</b>
               </div>
               <div class="gallery-published-info">
-                <span>{{ item.title }}</span>
-                <button type="button" class="underlined" (click)="deleteVenueGalleryMedia(item)">Delete</button>
+                <input class="gallery-published-title" [ngModel]="item.title" (ngModelChange)="onVenueGalleryTitleInput(item, $event)" [name]="'galleryTitle' + i" maxlength="120" aria-label="Title">
+                <div class="gallery-published-actions">
+                  <button type="button" class="underlined" [disabled]="!venueGalleryTitleEdits[item.image] || venueGalleryRenaming[item.image]" (click)="renameVenueGalleryMedia(item)">{{ venueGalleryRenaming[item.image] ? 'Saving…' : 'Rename' }}</button>
+                  <button type="button" class="underlined" (click)="deleteVenueGalleryMedia(item)">Delete</button>
+                </div>
               </div>
             </div>
           </div>
