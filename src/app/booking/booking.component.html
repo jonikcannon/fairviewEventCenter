@@ -160,14 +160,14 @@
     <div class="booking-groups" *ngIf="!requestDateInput">
       <div class="booking-group">
         <h3>Unavailable days in {{ calendarMonthLabel }}</h3>
-        <div class="booking-scroll" *ngIf="monthBookedDates.length; else noDaysThisMonth">
-          <div class="slot-card" *ngFor="let date of monthBookedDates; trackBy: trackByDate">
-            <span class="slot-date">{{ formatDay(date) }}</span>
-            <span class="slot-fee">Booked</span>
+        <div class="booking-scroll" *ngIf="monthUnavailableDates.length; else noDaysThisMonth">
+          <div class="slot-card" *ngFor="let entry of monthUnavailableDates; trackBy: trackByUnavailableDate">
+            <span class="slot-date">{{ formatDay(entry.date) }}</span>
+            <span class="slot-fee">{{ entry.booked ? 'Booked' : 'Closed' }}</span>
           </div>
         </div>
         <ng-template #noDaysThisMonth>
-          <p class="booking-scroll-empty">No booked days in {{ calendarMonthLabel }} yet. Pick a date above to reserve one.</p>
+          <p class="booking-scroll-empty">No unavailable days in {{ calendarMonthLabel }}. Pick a date above to reserve one.</p>
         </ng-template>
       </div>
     </div>

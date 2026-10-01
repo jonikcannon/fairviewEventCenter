@@ -205,19 +205,25 @@ export class BookingComponent {
 
   // Scoped to whatever month the calendar above is currently showing, so the
   // scrollable strip stays in sync with the ← / → month nav instead of always
-  // listing every booked day site-wide. bookedDates carries no price or
-  // customer info (see the input's doc comment) -- only the date -- which is
-  // exactly right for a read-only "here's what's taken" reference; there is
-  // nothing to click into.
-  get monthBookedDates(): string[] {
+  // listing every unavailable day site-wide. Covers both reasons a day is
+  // unavailable on the calendar grid above: actually booked, and recurring
+  // admin-closed weekdays (minus any one-off unblock exception) -- otherwise
+  // a day greyed out on the grid could still be missing from this list.
+  // bookedDates carries no price or customer info (see the input's doc
+  // comment) -- only the date -- which is exactly right for a read-only
+  // "here's what's taken" reference; there is nothing to click into.
+  get monthUnavailableDates(): Array<{ date: string; booked: boolean }> {
     const year = this.calendarMonth.getFullYear();
     const month = this.calendarMonth.getMonth();
-    return this.bookedDates
-      .filter(date => {
-        const day = this.parseDay(date);
-        return day.getFullYear() === year && day.getMonth() === month;
-      })
-      .sort((left, right) => left.localeCompare(right));
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const booked = new Set(this.bookedDates);
+    const dates: Array<{ date: string; booked: boolean }> = [];
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const date = this.toDateKey(new Date(year, month, day));
+      if (booked.has(date)) dates.push({ date, booked: true });
+      else if (this.isDateClosed(date)) dates.push({ date, booked: false });
+    }
+    return dates;
   }
 
   // Dates are plain calendar days. Parsing them as local time avoids the
@@ -440,6 +446,9 @@ export class BookingComponent {
     });
   }
 
+  trackByUnavailableDate(_: number, entry: { date: string; booked: boolean }) {
+    return entry.date;
+  }
   trackByDate(_: number, date: string) {
     return date;
   }
