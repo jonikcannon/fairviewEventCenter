@@ -943,14 +943,31 @@ app.get('/api/content', (req, res) => {
   res.json(publicContent);
 });
 
+// Everyone allowed to sign in with a password: ADMIN_EMAIL/ADMIN_PASSWORD_HASH
+// plus ADMIN_PASSWORD_USERS, a comma-separated list of email:bcryptHash pairs
+// (bcrypt hashes never contain ':' or ','), e.g.
+// ADMIN_PASSWORD_USERS=jane@gmail.com:$2a$12$...,bob@gmail.com:$2a$12$...
+// Keys are lowercased so sign-in is case-insensitive on the email.
+function passwordAdminHashes() {
+  const users = new Map();
+  for (const entry of String(process.env.ADMIN_PASSWORD_USERS || '').split(',')) {
+    const separator = entry.indexOf(':');
+    if (separator < 1) continue;
+    const email = entry.slice(0, separator).trim().toLowerCase();
+    const hash = entry.slice(separator + 1).trim();
+    if (email && hash) users.set(email, hash);
+  }
+  const primary = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+  const primaryHash = String(process.env.ADMIN_PASSWORD_HASH || '').trim();
+  if (primary && primaryHash) users.set(primary, primaryHash);
+  return users;
+}
+
 app.post('/api/admin/login', rateLimit({ windowMs: 900000, max: 8, message: { error: 'Too many attempts. Try again later.' } }), async (req, res) => {
-  const { email, password } = req.body || {};
-  if (
-    !email ||
-    !password ||
-    email !== process.env.ADMIN_EMAIL ||
-    !(await bcrypt.compare(password, process.env.ADMIN_PASSWORD_HASH || ''))
-  ) {
+  const { password } = req.body || {};
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const hash = email ? passwordAdminHashes().get(email) : undefined;
+  if (!email || !password || !hash || !(await bcrypt.compare(String(password), hash))) {
     return res.status(401).json({ error: 'Invalid email or password.' });
   }
 
@@ -988,7 +1005,7 @@ app.post('/api/admin/google-login', rateLimit({ windowMs: 900000, max: 15, messa
     });
 
     const payload = ticket.getPayload();
-    if (!payload?.email || !allowedGoogleAdminEmails().has(String(payload.email).toLowerCase())) {
+    if (!payload?.email || payload.email_verified === false || !allowedGoogleAdminEmails().has(String(payload.email).toLowerCase())) {
       return res.status(403).json({ error: 'Access denied. Not authorized.' });
     }
 

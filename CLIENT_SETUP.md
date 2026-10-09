@@ -259,6 +259,11 @@ email + password, which is simpler to set up and doesn't need any of the above:
   ```bash
   node -e "console.log(require('bcryptjs').hashSync('choose-a-strong-password', 12))"
   ```
+- `.env`'s `ADMIN_PASSWORD_USERS` (optional) — additional admins who can use
+  the password form, as comma-separated `email:bcryptHash` pairs, e.g.
+  `ADMIN_PASSWORD_USERS=jane@gmail.com:$2a$12$...,bob@gmail.com:$2a$12$...`
+  (generate each hash with the same command above). Email matching is
+  case-insensitive.
 - `.env`'s `JWT_SECRET` — signs the admin's login session. Generate a random
   one with:
 
