@@ -171,9 +171,13 @@ nginx -t
 systemctl reload nginx
 
 echo "==> Enabling UFW + fail2ban"
-ufw allow OpenSSH
-ufw allow 'Nginx Full'
-ufw --force enable
+# SKIP_FIREWALL=1 on a shared box whose other apps rely on ufw staying off
+# (e.g. a LAN-only admin UI); enabling it here would silently block them.
+if [[ "${SKIP_FIREWALL:-}" != "1" ]]; then
+  ufw allow OpenSSH
+  ufw allow 'Nginx Full'
+  ufw --force enable
+fi
 
 cat > /etc/fail2ban/jail.d/sshd.local <<'EOF'
 [sshd]

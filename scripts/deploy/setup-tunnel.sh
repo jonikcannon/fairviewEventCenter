@@ -13,15 +13,20 @@ set -euo pipefail
 #                                         permission needed to route traffic
 #                                         to a public hostname)
 #   Zone    : Zone              : Read   (look the zone up by name)
-# Scope it to fairview-event-center.com alone, not "All zones".
+# Scope it to fairviewcommunitycenter.com alone, not "All zones".
 #
 # Idempotent: re-running reuses an existing tunnel of the same name and
 # updates records in place rather than duplicating them.
 
-DOMAIN="${DOMAIN:-fairview-event-center.com}"
+DOMAIN="${DOMAIN:-fairviewcommunitycenter.com}"
 TUNNEL_NAME="${TUNNEL_NAME:-fairview-prod}"
 ORIGIN_URL="${ORIGIN_URL:-http://localhost:80}"
 APP_DIR="${APP_DIR:-/var/www/fairview/app}"
+# Names this app's connector. Other apps on the same server (each with its own
+# tunnel) must use a different name -- see "Installing the connector" below.
+CONNECTOR_NAME="${CONNECTOR_NAME:-fairview}"
+UNIT_NAME="cloudflared-${CONNECTOR_NAME}"
+TOKEN_FILE="/etc/cloudflared/${CONNECTOR_NAME}.token"
 API="https://api.cloudflare.com/client/v4"
 
 # Default the token from ~/.cf-token (mode 600) so it never has to be passed on
@@ -129,16 +134,41 @@ for NAME in "${DOMAIN}" "www.${DOMAIN}"; do
   fi
 done
 
-echo "==> Installing the connector as a system service"
+echo "==> Installing the connector as its own system service (${UNIT_NAME})"
 BODY="$(cf "${API}/accounts/${ACCOUNT_ID}/cfd_tunnel/${TUNNEL_ID}/token")"
 check "${BODY}" "fetching connector token"
-RUN_TOKEN="$(jq -r '.result' <<<"${BODY}")"
 
-# A previous install has to go before another can be laid down.
-sudo cloudflared service uninstall >/dev/null 2>&1 || true
-sudo cloudflared service install "${RUN_TOKEN}"
-sudo systemctl enable --now cloudflared
-unset RUN_TOKEN
+# Deliberately NOT `cloudflared service install`. That command owns one fixed
+# machine-wide unit (cloudflared.service) and a fixed token file, so on a server
+# shared with other apps (demori-studios runs its own tunnel on the same box) it
+# would replace their connector: their tunnel goes "down" with DNS still pointing
+# at it and their site returns error 1033. A per-tunnel unit and token file can
+# coexist with any number of others, and this script never touches
+# cloudflared.service or anyone else's token.
+sudo install -d -m 755 /etc/cloudflared
+# Written through stdin so the token never appears in a process list or history.
+jq -r '.result' <<<"${BODY}" | sudo install -m 600 -o root -g root /dev/stdin "${TOKEN_FILE}"
+unset BODY
+
+sudo tee "/etc/systemd/system/${UNIT_NAME}.service" >/dev/null <<UNIT
+[Unit]
+Description=Cloudflare Tunnel client (${TUNNEL_NAME})
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+TimeoutStartSec=15
+Type=notify
+ExecStart=/usr/bin/cloudflared --no-autoupdate tunnel run --token-file ${TOKEN_FILE}
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo systemctl daemon-reload
+sudo systemctl enable "${UNIT_NAME}"
+sudo systemctl restart "${UNIT_NAME}"
 
 echo "==> Retiring the temporary quick tunnel"
 sudo systemctl stop cf-quick 2>/dev/null || true
@@ -173,8 +203,8 @@ Done. Tunnel ${TUNNEL_NAME} (${TUNNEL_ID}) is serving:
   https://${DOMAIN}
   https://www.${DOMAIN}
 
-  systemctl status cloudflared     # connector health
-  journalctl -u cloudflared -f     # live logs
+  systemctl status ${UNIT_NAME}     # connector health
+  journalctl -u ${UNIT_NAME} -f     # live logs
 
 DNS may take a minute to propagate on a freshly registered domain.
 EOF

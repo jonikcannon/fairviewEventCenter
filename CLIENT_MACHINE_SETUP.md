@@ -264,11 +264,11 @@ service too, though removing it from GitHub is what actually matters.
 
 - [ ] `https://your-domain.com` loads over HTTPS with a valid certificate
       (padlock, no warnings)
-- [ ] `sudo systemctl status cloudflared` shows **active (running)**
+- [ ] `sudo systemctl status cloudflared-fairview` shows **active (running)**
 - [ ] `pm2 status` shows `fairviewApi` **online**
 - [ ] `pm2 startup` was applied during bootstrap — reboot the machine once
       and confirm the site comes back on its own (`pm2 status` and
-      `systemctl status cloudflared` both healthy again after reboot,
+      `systemctl status cloudflared-fairview` both healthy again after reboot,
       with no manual restart needed)
 - [ ] The GitHub Actions runner shows **Idle** (not offline) in
       Settings → Actions → Runners
@@ -299,7 +299,7 @@ service too, though removing it from GitHub is what actually matters.
 - **Checking on it:**
   - `pm2 status` / `pm2 logs fairviewApi` — is the app itself running, any
     errors
-  - `systemctl status cloudflared` — is the tunnel connected
+  - `systemctl status cloudflared-fairview` — is the tunnel connected
   - `systemctl status nginx` — is the web server running
 - **Updates happen automatically** (Phase 5) — you shouldn't need to do
   anything for a routine code change. If a deploy ever needs to be re-run by
@@ -316,7 +316,7 @@ service too, though removing it from GitHub is what actually matters.
   Active. Recheck Websites/Overview, and recreate the token if needed.
 - **Site works over `http://127.0.0.1/` on the machine but not from
   outside.** Phase 4 hasn't completed successfully, or DNS hasn't propagated
-  yet — give it a few minutes, then re-check `systemctl status cloudflared`.
+  yet — give it a few minutes, then re-check `systemctl status cloudflared-fairview`.
 - **A GitHub Actions deploy fails at "Verify the API is serving."** Check
   `pm2 logs fairviewApi --lines 40 --nostream` on the machine — the workflow
   prints this automatically on failure, but it's worth checking directly too.
