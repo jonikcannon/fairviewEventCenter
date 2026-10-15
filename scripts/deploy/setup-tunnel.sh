@@ -19,7 +19,7 @@ set -euo pipefail
 # updates records in place rather than duplicating them.
 
 DOMAIN="${DOMAIN:-fairviewcommunitycenter.com}"
-TUNNEL_NAME="${TUNNEL_NAME:-fairview-prod}"
+TUNNEL_NAME="${TUNNEL_NAME:-fairview-event-center}"
 ORIGIN_URL="${ORIGIN_URL:-http://localhost:80}"
 APP_DIR="${APP_DIR:-/var/www/fairview/app}"
 # Names this app's connector. Other apps on the same server (each with its own
