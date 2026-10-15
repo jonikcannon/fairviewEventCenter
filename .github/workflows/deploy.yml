@@ -15,7 +15,7 @@ concurrency:
 jobs:
   deploy:
     name: Deploy to the Ubuntu server
-    # The server lives on a private LAN (192.168.4.55), which GitHub's hosted
+    # The server lives on a private LAN (192.168.4.60), which GitHub's hosted
     # runners cannot route to. A self-hosted runner on the box itself connects
     # OUTBOUND to GitHub instead, so nothing has to be exposed to the internet
     # and no SSH key ever needs to live in GitHub.
@@ -58,7 +58,7 @@ jobs:
       - name: Verify the site is being served
         run: |
           set -euo pipefail
-          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/ || true)
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: fairviewcommunitycenter.com' http://127.0.0.1/ || true)
           if [ "$code" = "200" ] || [ "$code" = "301" ] || [ "$code" = "302" ]; then
             echo "Nginx serving the site (HTTP $code)."
           else

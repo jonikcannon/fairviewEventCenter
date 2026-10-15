@@ -101,7 +101,7 @@ else
   exit 1
 fi
 
-SITE_CODE="$(ssh_run "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/ || true")"
+SITE_CODE="$(ssh_run "curl -s -o /dev/null -w '%{http_code}' -H 'Host: fairviewcommunitycenter.com' http://127.0.0.1/ || true")"
 echo "    Site returned HTTP ${SITE_CODE:-no response}"
 
 echo
